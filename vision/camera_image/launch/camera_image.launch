@@ -1,0 +1,62 @@
+<launch>
+	<arg name="main_camera_name" default="main"/>
+	<arg name="main_camera_num" default="1"/> <!-- 0번으로 바꾸기 -->
+<!--
+	<arg name="left_camera_name" default="left"/>
+	<arg name="left_camera_num" default="1"/>
+
+	<arg name="right_camera_name" default="right"/>
+	<arg name="right_camera_num" default="2"/> -->
+<!-- for two webcam
+	<arg name="left_camera_name" default="left"/>
+	<arg name="left_camera_num" default="0"/>
+
+	<arg name="right_camera_name" default="right"/>
+	<arg name="right_camera_num" default="1"/>
+-->
+	<group ns="$(arg main_camera_name)">
+                <node name="camera_image" pkg="camera_image" type="camera_image" args="$(arg main_camera_name)">
+                        <param name="camera_num" value="$(arg main_camera_num)"/>
+                        <param name="frequency" value="30"/>
+                        <param name="debug" value="0"/>
+                        <param name="calibration" value="1"/>
+                        <param name="sizeup" value="0"/>
+                </node>
+        </group>
+
+
+<!-- for two webcam
+	<group ns="$(arg left_camera_name)">
+		  <node name="camera_image" pkg="camera_image" type="camera_image" args="$(arg left_camera_name)">
+			<param name="camera_num" value="$(arg left_camera_num)"/>
+			<param name="frequency" value="30"/>
+			<param name="debug" value="0"/>
+			<param name="calibration" value="0"/>
+			<param name="sizeup" value="0"/>
+		</node> 
+	</group>
+
+	<group ns="$(arg right_camera_name)">
+		 <node name="camera_image" pkg="camera_image" type="camera_image" args="$(arg right_camera_name)">
+			<param name="camera_num" value="$(arg right_camera_num)"/>
+			<param name="frequency" value="30"/>
+			<param name="debug" value="0"/>
+			<param name="calibration" value="0"/>
+			<param name="sizeup" value="0"/>
+		</node>
+
+	</group>
+-->
+
+</launch>
+
+
+<!-- <launch>
+	<node name="camera_image" pkg="camera_image" type="camera_image" output="screen">
+    <param name="CAMERA_NUM" value="1"/>
+    <param name="FREQUENCY" value="30"/>
+    <param name="debug" value="1"/>
+    <param name="CALIBRATION" value="0"/>
+    <param name="SIZEUP" value="0"/>
+  </node>
+</launch> -->
