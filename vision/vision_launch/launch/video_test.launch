@@ -28,7 +28,7 @@
 	  <param name="w_vmax" value="255"/>
     </node>
 
-		
+		<!--
 		<node name="cal_distance" pkg="cal_distance" type="cal_distance" args="$(arg main_camera_name)" respawn="true" output="screen">
 			<param name="debug" value="0"/>
 			<param name="cal_path" value="/home/seuleee/catkin_ws/src/autorace2018_superburger/vision/cal_distance/data"/>
@@ -41,7 +41,7 @@
 		<include file="$(find pointcloud_to_laserscan)/launch/sample_node.launch">
 			<arg name="groupName" value="$(arg main_camera_name)"/>
 		</include>
-		
+		-->
 
 	</group>
 

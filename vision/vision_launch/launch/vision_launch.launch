@@ -11,7 +11,7 @@
 		<param name="track_bar" value="1"/>
 		<param name="timecheck" value="0"/>
 		<param name="lable" value="0"/>
-		<param name="gazebo" value="0"/>
+		<param name="gazebo" value="1"/>
 		<param name="bird_eye_view" value="0"/>
 		<param name="auto_shot" value="0"/>
 		<param name="auto_record" value="0"/>
@@ -30,6 +30,7 @@
 		<param name="w_vmin" value="220"/>
 		<param name="w_vmax" value="255"/>
 		</node>
+		<!--
 		<node name="cal_distance" pkg="cal_distance" type="cal_distance" args="$(arg main_camera_name)" respawn="true" output="screen">
 			<param name="debug" value="0"/>
 			<param name="cal_path" value="/home/seuleee/catkin_ws/src/autorace2018_superburger/vision/cal_distance/data"/>
@@ -40,6 +41,7 @@
 		<include file="$(find pointcloud_to_laserscan)/launch/sample_node.launch">
 			<arg name="groupName" value="$(arg main_camera_name)"/>
 		</include>
+		-->
 	</group>
 	<include file="$(find ira_laser_tools)/launch/laserscan_multi_merger.launch"></include>
 </launch>

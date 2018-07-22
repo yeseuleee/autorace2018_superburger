@@ -1263,6 +1263,16 @@ namespace lane_detect_algo{
                 std::vector<cv::Vec4i> hierachy;
                 cv::Point pt_left_top, pt_right_bottom;
                 std::vector<cv::Point> box_pt;
+                
+                //** set roi **//
+                for(int y = 0; y<src.rows*0.5; y++){
+                    uchar* none_roi_data = src.ptr<uchar>(y);
+                    for(int x = 0; x<src.cols; x++){
+                        if(none_roi_data[x] != (uchar)0){
+                            none_roi_data[x] = (uchar)0;
+                        }
+                    }
+                }
                 cv::findContours(src, countours, hierachy, CV_RETR_LIST, CV_CHAIN_APPROX_SIMPLE, cv::Point(0, 0));
                 dst = cv::Mat::zeros(src.size(), CV_8UC3);
 
@@ -1285,7 +1295,16 @@ namespace lane_detect_algo{
                         max_area = temp_area;
                     }
                 }
-             
+
+                int avg_area = 0, sum_area = 0;
+                for (int row = 1; row < numOfLables; row++){
+                    int* area_avg_data = stats.ptr<int>(row);
+                    sum_area += area_avg_data[cv::CC_STAT_AREA];
+                }
+                if(sum_area != 0){
+                    avg_area = sum_area/numOfLables;
+                }
+                
 
                 int temp_height= 0, max_height = 0;
                     for (int row = 1; row < numOfLables; row++) {
@@ -1337,34 +1356,51 @@ namespace lane_detect_algo{
               //-for max area and extra-//  if (area == max_area && width<height && left<src.cols / 2 && width<src.cols / 2) {//이 조건들에 추가조건 더해서 레이블 유효성 검사
              //   if (left<src.cols*0.95 && width<src.cols*1.8/2){
                 //    imshow("y_lable", draw_lable);
-                if (area > 10 && top + height == max_bottom){
-                    if(left+width > src.cols/2 || top < src.rows/2){
-                                if(left+width > src.cols/2 && top < src.rows/2){
-                                    pt_left_top = cv::Point(left,top+(height/2));
-                                    pt_right_bottom = cv::Point(left+(width/2),top+height);
-                                    box_pt.push_back(pt_left_top);
-                                    box_pt.push_back(pt_right_bottom);
-                                }
-                                else if(left+width > src.cols/2){
-                                    pt_left_top = cv::Point(left,top+(height/2));
-                                    pt_right_bottom = cv::Point(left+width,top+height);
-                                    box_pt.push_back(pt_left_top);
-                                    box_pt.push_back(pt_right_bottom);
-                                }
-                                else if(top<src.rows/2){
-                                    pt_left_top = cv::Point(left,top);
-                                    pt_right_bottom = cv::Point(left+(width/2),top+height);
-                                    box_pt.push_back(pt_left_top);
-                                    box_pt.push_back(pt_right_bottom);
-                                }
-                            }
-                            else{
-                                pt_left_top = cv::Point(left,top);
-                                pt_right_bottom = cv::Point(left+width,top+height);
-                                box_pt.push_back(pt_left_top);
-                                box_pt.push_back(pt_right_bottom);
-                                //pt_right_bottop(left+width,top+height);
-                            }
+                if (area > avg_area && top + height == max_bottom){
+                    pt_left_top = cv::Point(left,top);
+                    pt_right_bottom = cv::Point(left+width,top+height);
+                    // if(left+width < src.cols*0.85){
+                    //     pt_right_bottom = cv::Point(left+(width/2),top+height);
+                    // }
+                    // else{
+                    //     pt_right_bottom = cv::Point(left+width,top+height);
+                    // }
+                    // if(top < src.rows*0.35){
+                    //     pt_left_top = cv::Point(left,top+(height/2));
+                    // }
+                    // else{
+                    //     pt_left_top = cv::Point(left,top);
+                    // }
+                    // //??//pt_right_bottom = cv::Point(pt_right_bottom.x,pt_left_top.y+height);
+                    box_pt.push_back(pt_left_top);
+                    box_pt.push_back(pt_right_bottom);
+                    // if(left+width > src.cols/2 || top < src.rows/2){
+                    //             if(left+width > src.cols/2 && top < src.rows/2){
+                    //                 pt_left_top = cv::Point(left,top+(height/2));
+                    //                 pt_right_bottom = cv::Point(left+(width/2),top+height);
+                    //                 box_pt.push_back(pt_left_top);
+                    //                 box_pt.push_back(pt_right_bottom);
+                    //             }
+                    //             else if(left+width > src.cols/2){
+                    //                 pt_left_top = cv::Point(left,top+(height/2));
+                    //                 pt_right_bottom = cv::Point(left+width,top+height);
+                    //                 box_pt.push_back(pt_left_top);
+                    //                 box_pt.push_back(pt_right_bottom);
+                    //             }
+                    //             else if(top<src.rows/2){
+                    //                 pt_left_top = cv::Point(left,top);
+                    //                 pt_right_bottom = cv::Point(left+(width/2),top+height);
+                    //                 box_pt.push_back(pt_left_top);
+                    //                 box_pt.push_back(pt_right_bottom);
+                    //             }
+                    //         }
+                    //         else{
+                    //             pt_left_top = cv::Point(left,top);
+                    //             pt_right_bottom = cv::Point(left+width,top+height);
+                    //             box_pt.push_back(pt_left_top);
+                    //             box_pt.push_back(pt_right_bottom);
+                    //             //pt_right_bottop(left+width,top+height);
+                    //         }
                 //if (area == max_area && width<height && left<src.cols-100 && width<src.cols / 2){
               //  if (abs(max_height - height)<100 && abs(max_bottom-(top+height))<50) {//이 조건들에 추가조건 더해서 레이블 유효성 검사
                     
@@ -1422,7 +1458,15 @@ namespace lane_detect_algo{
                 std::vector<cv::Vec4i> hierachy;
                 cv::Point pt_left_top, pt_right_bottom;
                 std::vector<cv::Point> box_pt;
-               // crosswalkCheck(src);
+              
+                for(int y = 0; y<src.rows*0.5; y++){
+                    uchar* none_roi_data = src.ptr<uchar>(y);
+                    for(int x = 0; x<src.cols; x++){
+                        if(none_roi_data[x] != (uchar)0){
+                            none_roi_data[x] = (uchar)0;
+                        }
+                    }
+                }
                 cv::findContours(src, countours, hierachy, CV_RETR_LIST, CV_CHAIN_APPROX_SIMPLE, cv::Point(0, 0));
                 dst = cv::Mat::zeros(src.size(), CV_8UC3);
 
@@ -1440,7 +1484,8 @@ namespace lane_detect_algo{
                 
                 int temp_area = 0, max_area = 0;
                 int* area_data;
-               // if(COUNT_MAX_AREA){//쓸때는 if문 빼고
+               
+
                 for (int row = 1; row < numOfLables; row++) {
                     area_data = stats.ptr<int>(row);
                     temp_area = area_data[cv::CC_STAT_AREA];
@@ -1448,7 +1493,14 @@ namespace lane_detect_algo{
                         max_area = temp_area;
                     }
                 }
-                //}
+                int avg_area = 0, sum_area = 0;
+                for (int row = 1; row < numOfLables; row++){
+                    int* area_avg_data = stats.ptr<int>(row);
+                    sum_area += area_avg_data[cv::CC_STAT_AREA];
+                }
+                if(sum_area != 0){
+                    avg_area = sum_area/numOfLables;
+                }
 
 
 
@@ -1498,41 +1550,59 @@ namespace lane_detect_algo{
                           FONT_HERSHEY_SIMPLEX, 0.3, Scalar(5,25,255), 2); 
                     cv::imshow("w_lable", draw_lable);
                     //--for max area and extra//    if (area == max_area && width<height && left>src.cols / 3 && width<src.cols / 2) {//이 조건들에 추가조건 더해서 레이블 유효성 검사
-                        if(area > 10 && top + height == max_bottom){
-                            if(left < src.cols/2 || top < src.rows/2){
-                                if(left<src.cols/2 && top < src.rows/2){
-                                    pt_left_top = cv::Point(left+(width/2),top+(height/2));
-                                    pt_right_bottom = cv::Point(left+width,top+height);
-                                    box_pt.push_back(pt_left_top);
-                                    box_pt.push_back(pt_right_bottom);
-                                }
-                                else if(left<src.cols/2){
-                                    pt_left_top = cv::Point(left,top+(height/2));
-                                    pt_right_bottom = cv::Point(left+width,top+height);
-                                    box_pt.push_back(pt_left_top);
-                                    box_pt.push_back(pt_right_bottom);
-                                }
-                                else if(top<src.rows/2){
-                                    pt_left_top = cv::Point(left+(width/2),top);
-                                    pt_right_bottom = cv::Point(left+width,top+height);
-                                    box_pt.push_back(pt_left_top);
-                                    box_pt.push_back(pt_right_bottom);
-                                }
-                            }
-                            else{
-                                pt_left_top = cv::Point(left,top);
-                                pt_right_bottom = cv::Point(left+width,top+height);
-                                box_pt.push_back(pt_left_top);
-                                box_pt.push_back(pt_right_bottom);
-                                //pt_right_bottop(left+width,top+height);
-                            }
+                        if(area > avg_area && top + height == max_bottom){
+                            pt_left_top = cv::Point(left,top);
+                            pt_right_bottom = cv::Point(left+width,top+height);
+                            // if(left < src.cols*0.35){
+                            //     pt_left_top = cv::Point(left+(width/2),top);
+                            // }
+                            // else{
+                            //     pt_left_top = cv::Point(left,top);
+                            // }
+                            // if(top < src.rows*0.35){
+                            //     pt_left_top = cv::Point(pt_left_top.x,top+(height/2));
+                            // }
+                            // else{
+                            //     pt_left_top = cv::Point(pt_left_top.x,top);
+                            // }
+                            // pt_right_bottom = cv::Point(left+width,top+height);
+                            box_pt.push_back(pt_left_top);
+                            box_pt.push_back(pt_right_bottom);
+                            
+                            // if(left < src.cols/2 || top < src.rows/2){
+                            //     if(left<src.cols/2 && top < src.rows/2){
+                            //         pt_left_top = cv::Point(left+(width/2),top+(height/2));
+                            //         pt_right_bottom = cv::Point(left+width,top+height);
+                            //         box_pt.push_back(pt_left_top);
+                            //         box_pt.push_back(pt_right_bottom);
+                            //     }
+                            //     else if(left<src.cols/2){
+                            //         pt_left_top = cv::Point(left,top+(height/2));
+                            //         pt_right_bottom = cv::Point(left+width,top+height);
+                            //         box_pt.push_back(pt_left_top);
+                            //         box_pt.push_back(pt_right_bottom);
+                            //     }
+                            //     else if(top<src.rows/2){
+                            //         pt_left_top = cv::Point(left+(width/2),top);
+                            //         pt_right_bottom = cv::Point(left+width,top+height);
+                            //         box_pt.push_back(pt_left_top);
+                            //         box_pt.push_back(pt_right_bottom);
+                            //     }
+                            // }
+                            // else{
+                            //     pt_left_top = cv::Point(left,top);
+                            //     pt_right_bottom = cv::Point(left+width,top+height);
+                            //     box_pt.push_back(pt_left_top);
+                            //     box_pt.push_back(pt_right_bottom);
+                            //     //pt_right_bottop(left+width,top+height);
+                            // }
                         //if(abs(height - max_height)<100 && left<src.cols*1.8/2){
                         //if(abs(max_height - height)<120 ) {//이 조건들에 추가조건 더해서 레이블 유효성 검사
                             for (int delete_row = dst.rows-1; delete_row >= 0; --delete_row) {
                                 uchar* delete_data = dst.ptr<uchar>(delete_row);
                                 for (int delete_col = 0; delete_col < dst.cols; ++delete_col) {
                                     if ((delete_col > left + width || delete_col < left) || (delete_row<top || delete_row>top + height)) {
-                                    delete_data[delete_col] = (uchar)0;
+                                        delete_data[delete_col] = (uchar)0;
                                     }
                                     //else {//range of max lable box///////////////////////for visible center line////////////////////////////////////////////
                                     // if (delete_data[delete_col] != 0 && !lane_checked&& coordi_index<dst.cols / 2 * 3) {
@@ -1552,7 +1622,7 @@ namespace lane_detect_algo{
                                 }
 
                         }
-                        else {//delete wrong lable
+                        else {//delete wrong lable //유효 레이블 내의 무효 레이블값들을 지움.. 2인값은 1빼도록 하는 방식으로 유효차선이랑 겹치는부분 빼
                             for (int row = top; row < top + height; row++) {
                                 uchar* data = dst.ptr<uchar>(row);
                                     for (int col = left; col < left + width; col++) {//1채널이라 (left+width)에 채널값 안곱함
