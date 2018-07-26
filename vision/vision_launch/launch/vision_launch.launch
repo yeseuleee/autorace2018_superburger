@@ -1,8 +1,8 @@
 <launch>
 	<arg name="main_camera_name" default="main"/>
 	<arg name="main_camera_num" default="0"/>
-
-
+	<!-- <param name="seul" value="false"/> -->
+	<param name="control/wait" value="false" /> 
 	<group ns="$(arg main_camera_name)">
 		<node name="lane_detection" pkg="lane_detection" type="lane_detection" args="$(arg main_camera_name)" output="screen" respawn="true">
 		<param name="debug" value="0"/>
@@ -43,5 +43,5 @@
 		</include>
 		-->
 	</group>
-	<include file="$(find ira_laser_tools)/launch/laserscan_multi_merger.launch"></include>
+		<!--	<include file="$(find ira_laser_tools)/launch/laserscan_multi_merger.launch"></include> -->
 </launch>

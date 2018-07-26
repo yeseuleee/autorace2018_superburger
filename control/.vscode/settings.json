@@ -1,15 +1,5 @@
 {
-    "workbench.colorTheme": "Solarized Dark",
-    "editor.mouseWheelZoom": true,
-    "editor.minimap.enabled": false,
     "files.associations": {
-        "array": "cpp",
-        "deque": "cpp",
-        "unordered_map": "cpp",
-        "vector": "cpp",
-        "initializer_list": "cpp",
-        "chrono": "cpp",
-        "ratio": "cpp",
         "cctype": "cpp",
         "cmath": "cpp",
         "csignal": "cpp",
@@ -20,13 +10,15 @@
         "cstring": "cpp",
         "ctime": "cpp",
         "cwchar": "cpp",
-        "cwctype": "cpp",
         "atomic": "cpp",
         "strstream": "cpp",
+        "chrono": "cpp",
         "cstdint": "cpp",
+        "initializer_list": "cpp",
         "iosfwd": "cpp",
+        "ratio": "cpp",
         "thread": "cpp",
         "cinttypes": "cpp",
         "typeindex": "cpp"
-    },
+    }
 }

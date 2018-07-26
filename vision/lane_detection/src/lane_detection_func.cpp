@@ -1264,8 +1264,10 @@ namespace lane_detect_algo{
                 cv::Point pt_left_top, pt_right_bottom;
                 std::vector<cv::Point> box_pt;
                 
+                
+
                 //** set roi **//
-                for(int y = 0; y<src.rows*0.5; y++){
+                for(int y = 0; y<src.rows*0.6; y++){
                     uchar* none_roi_data = src.ptr<uchar>(y);
                     for(int x = 0; x<src.cols; x++){
                         if(none_roi_data[x] != (uchar)0){
@@ -1410,6 +1412,7 @@ namespace lane_detect_algo{
                             if ((delete_col > left + width || delete_col < left) || (delete_row<top || delete_row>top + height)) {
                                     delete_data[delete_col] = (uchar)0;
                             }
+
                             // if ((delete_col > left + width || delete_col < left) ) {
                             //     delete_data[delete_col] = (uchar)0;
                             // }
@@ -1428,6 +1431,8 @@ namespace lane_detect_algo{
                         //}/////////////////////////////////////////////////////////////////////////////////
                         }
                     }
+                    
+                    
                 //box check
                     //turn left
                 //for(int )/////////////////////////////////////////////////////////////
@@ -1437,7 +1442,7 @@ namespace lane_detect_algo{
                     for (int row = top; row < top + height; row++) {
                         uchar* data = dst.ptr<uchar>(row);
                         for (int col = left; col < left + width; col++) {//1채널이라 (left+width)에 채널값 안곱함
-                            // data[col] = (uchar)0; 
+                            data[col] = (uchar)0; 
 
                         }
                     }
@@ -1459,7 +1464,7 @@ namespace lane_detect_algo{
                 cv::Point pt_left_top, pt_right_bottom;
                 std::vector<cv::Point> box_pt;
               
-                for(int y = 0; y<src.rows*0.5; y++){
+                for(int y = 0; y<src.rows*0.6; y++){
                     uchar* none_roi_data = src.ptr<uchar>(y);
                     for(int x = 0; x<src.cols; x++){
                         if(none_roi_data[x] != (uchar)0){
@@ -1626,7 +1631,7 @@ namespace lane_detect_algo{
                             for (int row = top; row < top + height; row++) {
                                 uchar* data = dst.ptr<uchar>(row);
                                     for (int col = left; col < left + width; col++) {//1채널이라 (left+width)에 채널값 안곱함
-                                    //data[col] = (uchar)0;
+                                        data[col] = (uchar)0;
                                     }
                             }
                         }
