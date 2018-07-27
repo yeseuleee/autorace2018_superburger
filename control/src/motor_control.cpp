@@ -11,6 +11,8 @@
 #include <pcl_conversions/pcl_conversions.h>
 #include <pcl/point_cloud.h>
 #include <pcl/point_types.h>
+#define WHEEL_RADIUS 0.033
+#define WHEEL_BASE_LENGTH 0.160 //burger( waffle : 0.287)
 
 sensor_msgs::JointState js;
 pcl::PointCloud<pcl::PointXYZI> pc;//i is intensity by lidar
@@ -20,12 +22,26 @@ bool js_init_checked = false;
 std::vector<float> current_js;
 std::vector<float> prev_js;
 
-#define WHEEL_RADIUS 0.033
-#define WHEEL_BASE_LENGTH 0.160 //burger( waffle : 0.287)
+
 float odm_theta = 0;
 float odm_x = 0;
 float odm_y = 0; 
-void update_odometry(){
+float prev_e_k = 0, sum_e_k = 0;
+float goal_v = 0, goal_w = 0;
+
+float kp, ki , kd ;
+float v_g ;//= 0.11;
+float d_stop ;
+
+void initParam(ros::NodeHandle& nh){
+    nh.param<float>("/motor_control_node/kp",kp,1);
+    nh.param<float>("/motor_control_node/ki",ki,0.01);
+    nh.param<float>("/motor_control_node/kd",kd,0.01);
+    nh.param<float>("/motor_control_node/v_g",v_g,0.11);
+    nh.param<float>("/motor_control_node/d_stop",d_stop,0.02);
+}
+
+void updateOdometry(){
 
     float delta_right_rad, delta_left_rad, m_per_rad;
 	float dr, dl, dc;
@@ -68,6 +84,56 @@ void update_odometry(){
     }
     
 }
+int checkEvent(float input_x, float input_y){
+    bool rc = false;
+	float x, y, x_g, y_g, e; //current x,y goal x,y error
+	x = odm_x;
+	y = odm_y;
+	x_g = input_x;
+	y_g = input_y;
+	e = d_stop;
+	//printf("x = %lf , y = %lf, x_g = %lf, y_g = %lf, e = %lf\n",x,y,x_g,y_g,e);
+	if(( x >= x_g - e) && (x <= x_g + e) && (y >= y_g - e) && (y <= y_g + e))//check if arrive
+		rc = true;
+	return rc;
+}
+int calPid(const std_msgs::Float32MultiArray::ConstPtr& goalData){
+    float u_x, u_y; //reference x , y
+	float theta_g; //theta goal (theta between goal and ev3)
+	float e_k,e_P,e_I,e_D; //PID errors
+	float w; //omega
+
+    if(!goalData->data.empty()){
+        u_x = goalData->data[0] - odm_x;
+        u_y = goalData->data[1] - odm_y;
+        theta_g = atan2(u_y,u_x);
+        e_k = theta_g - odm_theta;
+        e_k = atan2(sin(e_k),cos(e_k));
+        //printf("e_k = %lf\n",e_k);
+        e_P = e_k;
+        e_I = sum_e_k + e_k*0.1; //dt
+        e_D = (e_k - prev_e_k)/0.1; //dt
+        
+        w = kp*e_P + ki*e_I + kd*e_D;
+
+        sum_e_k = e_I;
+        prev_e_k = e_k;
+
+        
+        goal_v = v_g;
+        goal_w = w;
+        std::cout<<"x : "<<goalData->data[0]<<std::endl;
+        std::cout<<"y : "<<goalData->data[1]<<std::endl;
+        std::cout<<"goal_w : "<<goal_w<<std::endl;
+        //printf("u_y , u_x , theta_g = %lf, %lf, %lf\n",u_y,u_x,theta_g);
+        printf("out.o_v = %lf, out.o_w = %lf\n",goal_v,goal_w);
+        //return 1;
+        if(checkEvent(goalData->data[0],goalData->data[1])) return 1;
+        //return 0;
+    }
+	return 0;
+}
+
 //pcl::PointCloud<pcl::PointXYZ> pc;
 void jointCallback(const sensor_msgs::JointState& msg) { 
     js.position = msg.position;//1행 2열의 벡터(letf,right)
@@ -81,10 +147,8 @@ void jointCallback(const sensor_msgs::JointState& msg) {
         prev_js.push_back(js.position[1]);
         js_init_checked = true;
     }
-    update_odometry();
-    std::cout<<"odm_x : "<<odm_x<<std::endl;
-    std::cout<<"odm_y : "<<odm_y<<std::endl;
-    std::cout<<"odm_theta : "<<odm_theta<<std::endl;
+    updateOdometry();
+    
 }
 void cloudCallback(const sensor_msgs::PointCloud2ConstPtr& msg) 
 {
@@ -94,43 +158,32 @@ void cloudCallback(const sensor_msgs::PointCloud2ConstPtr& msg)
     //pcl::fromROSMsg(*msg,pc);
 }
 void pidCallback(const std_msgs::Float32MultiArray::ConstPtr& goalData){
-    // float u_x, u_y; //reference x , y
-	// float theta_g; //theta goal (theta between goal and ev3)
-	// float e_k,e_P,e_I,e_D; //PID errors
-	// float w; //omega
-
-	// u_x = in.x_g - odm_x;
-	// u_y = in.y_g - odm_y;
-	// theta_g = atan2(u_y,u_x);
-	// e_k = theta_g - odm_theta;
-	// e_k = atan2(sin(e_k),cos(e_k));
-	// //printf("e_k = %lf\n",e_k);
-	// e_P = e_k;
-	// e_I = E_k + e_k*0.1; //dt
-	// e_D = (e_k - e_k_1)/0.1; //dt
-
-	// w = kp*e_P + ki*e_I + kd*e_D;
-	// E_k = e_I;
-	// e_k_1 = e_k;
-
-	// out.o_v = in.v_g;
-	// out.o_w = w;
-	// //printf("u_y , u_x , theta_g = %lf, %lf, %lf\n",u_y,u_x,theta_g);
-	// printf("out.o_v = %lf, out.o_w = %lf\n",out.o_v,out.o_w);
-	// if(check_event(odm)) return 1;
-	// return 0;
+    //goal_v = 0.1;
+    //goal_w = goalData->data[0];
+    int pid_complete = calPid(goalData);
+    
+    if(pid_complete){
+         prev_e_k = 0;
+         sum_e_k = 0;
+         odm_x = 0;
+         odm_y = 0;
+         odm_theta = 0;
+         goal_v = 0;
+         goal_w = 0;
+        pid_complete = 0;
+    }
 }
 
 int main(int argc, char **argv){
     ros::init(argc, argv, "motor_control");
     ros::NodeHandle nh;
-    ros::Rate loop_rate(30);
-
+    ros::Rate loop_rate(10);
+    initParam(nh);
     ros::Publisher twist_pub = nh.advertise<geometry_msgs::Twist>("/cmd_vel",1000); 
 	ros::Publisher cloud_pub = nh.advertise<sensor_msgs::PointCloud2>("/cloud_out",1000);
 	ros::Subscriber state_reader = nh.subscribe("/joint_states",1000,jointCallback); 
 	ros::Subscriber point_reader = nh.subscribe("/cloud_points",1000,cloudCallback);
-    ros::Subscriber ang_vel_reader = nh.subscribe("/main/angular_vel",1000,pidCallback);
+    ros::Subscriber ang_vel_reader = nh.subscribe("/main/angular_vel",100,pidCallback);
 	//ros::ServiceServer control_srv = nh.advertiseService("/msrv",exec_command);
 	
     geometry_msgs::Twist twist_cmd;
@@ -141,12 +194,8 @@ int main(int argc, char **argv){
     
     while(ros::ok()){  
         ros::spinOnce(); //call all callback functions
-        
-        //if(right){
-
-        //twist_cmd.linear.y = 0.1;
-        //twist_cmd.angular.z = -0.1;
-        //}
+        twist_cmd.linear.x = goal_v;
+        twist_cmd.angular.z = goal_w;
         twist_pub.publish(twist_cmd);
         loop_rate.sleep();
     }

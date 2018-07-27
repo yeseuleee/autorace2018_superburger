@@ -5,31 +5,47 @@
 	<param name="control/wait" value="false" /> 
 	<group ns="$(arg main_camera_name)">
 		<node name="lane_detection" pkg="lane_detection" type="lane_detection" args="$(arg main_camera_name)" output="screen" respawn="true">
-		<param name="debug" value="0"/>
-		<param name="web_cam" value="1"/>
-		<param name="imshow" value="0"/>
-		<param name="track_bar" value="1"/>
-		<param name="timecheck" value="0"/>
-		<param name="lable" value="0"/>
-		<param name="gazebo" value="1"/>
-		<param name="bird_eye_view" value="0"/>
-		<param name="auto_shot" value="0"/>
-		<param name="auto_record" value="0"/>
-		<param name="record_name" value="/home/seuleee/Desktop/autorace_video_src/0720/stop/1/main_record.avi"/>
-		<!--robotis-->
-		<param name="y_hmin" value="0"/>
-		<param name="y_hmax" value="97"/>
-		<param name="y_smin" value="77"/>
-		<param name="y_smax" value="255"/>
-		<param name="y_vmin" value="0"/>
-		<param name="y_vmax" value="255"/>
-		<param name="w_hmin" value="0"/>
-		<param name="w_hmax" value="179"/>
-		<param name="w_smin" value="0"/>
-		<param name="w_smax" value="181"/>
-		<param name="w_vmin" value="220"/>
-		<param name="w_vmax" value="255"/>
+			<param name="debug" value="0"/>
+			<param name="web_cam" value="1"/>
+			<param name="imshow" value="0"/>
+			<param name="track_bar" value="1"/>
+			<param name="timecheck" value="0"/>
+			<param name="lable" value="0"/>
+			<param name="gazebo" value="0"/>
+			<param name="bird_eye_view" value="0"/>
+			<param name="auto_shot" value="0"/>
+			<param name="auto_record" value="0"/>
+			<param name="for_gui" value="0"/>
+			
+			
+			<param name="left_min_interval" value="110"/>
+			<param name="left_max_interval" value="150"/>
+			<param name="right_min_interval" value="120"/>
+			<param name="right_max_interval" value="160"/>
+			<param name="right_rotation_y_goal" value="-0.1"/>
+			<param name="left_rotation_y_goal" value="0.1"/>
+			<param name="default_x_goal" value="0.05"/>
+			<param name="default_y_goal" value="0"/>		
+			<param name="left_doubling" value="0.03"/>
+			<param name="right_doubling" value="-0.03"/>
+
+			<param name="record_name" value="/home/seuleee/Desktop/autorace_video_src/0720/stop/1/main_record.avi"/>
+			<!--robotis-->
+			<param name="y_hmin" value="0"/>
+			<param name="y_hmax" value="97"/>
+			<param name="y_smin" value="77"/>
+			<param name="y_smax" value="255"/>
+			<param name="y_vmin" value="0"/>
+			<param name="y_vmax" value="255"/>
+			<param name="w_hmin" value="0"/>
+			<param name="w_hmax" value="179"/>
+			<param name="w_smin" value="0"/>
+			<param name="w_smax" value="181"/>
+			<param name="w_vmin" value="220"/>
+			<param name="w_vmax" value="255"/>
 		</node>
+
+		
 		<!--
 		<node name="cal_distance" pkg="cal_distance" type="cal_distance" args="$(arg main_camera_name)" respawn="true" output="screen">
 			<param name="debug" value="0"/>
@@ -43,5 +59,6 @@
 		</include>
 		-->
 	</group>
-		<!--	<include file="$(find ira_laser_tools)/launch/laserscan_multi_merger.launch"></include> -->
+	<include file="$(find control)/launch/control.launch"></include>
+	
 </launch>

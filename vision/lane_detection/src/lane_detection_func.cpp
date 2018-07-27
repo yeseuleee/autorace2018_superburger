@@ -1275,6 +1275,15 @@ namespace lane_detect_algo{
                         }
                     }
                 }
+                for(int y = 0; y<src.rows; y++){
+                    uchar* none_roi_data = src.ptr<uchar>(y);
+                    for(int x = src.cols-30; x<src.cols; x++){
+                        if(none_roi_data[x] != (uchar)0){
+                            none_roi_data[x] = (uchar)0;
+                        }
+                    }
+                }
+
                 cv::findContours(src, countours, hierachy, CV_RETR_LIST, CV_CHAIN_APPROX_SIMPLE, cv::Point(0, 0));
                 dst = cv::Mat::zeros(src.size(), CV_8UC3);
 
@@ -1472,6 +1481,15 @@ namespace lane_detect_algo{
                         }
                     }
                 }
+                for(int y = 0; y<src.rows; y++){
+                    uchar* none_roi_data = src.ptr<uchar>(y);
+                    for(int x = 0; x < 30; x++){
+                        if(none_roi_data[x] != (uchar)0){
+                            none_roi_data[x] = (uchar)0;
+                        }
+                    }
+                }
+
                 cv::findContours(src, countours, hierachy, CV_RETR_LIST, CV_CHAIN_APPROX_SIMPLE, cv::Point(0, 0));
                 dst = cv::Mat::zeros(src.size(), CV_8UC3);
 
