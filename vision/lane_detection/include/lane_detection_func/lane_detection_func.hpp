@@ -72,8 +72,8 @@ namespace lane_detect_algo
             void makeWindow(cv::Mat src, cv::Mat dst, int window_width, int window_offset, int per_lane_checked);
             void slideWindow(cv::Mat src, int window_width, int window_height, int per_lane_in_window);
             bool addMat_imsi(cv::Mat src, int per_lane_in_window);
-            std::vector<cv::Point> makeContoursLeftLane(cv::Mat src, cv::Mat& dst);
-            std::vector<cv::Point> makeContoursRightLane(cv::Mat src, cv::Mat& dst);
+            int makeContoursLeftLane(cv::Mat src, cv::Mat& dst);
+            int makeContoursRightLane(cv::Mat src, cv::Mat& dst);
             void crosswalkCheck(cv::Mat);
             void makeContoursRightLane(cv::Mat src, cv::Mat& dst, int* crosswalk);
             void voteLabel(cv::Mat src, cv::Mat& dst);

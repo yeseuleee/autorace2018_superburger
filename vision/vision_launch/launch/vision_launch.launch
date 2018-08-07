@@ -14,14 +14,19 @@
 			<param name="gazebo" value="0"/>
 			<param name="bird_eye_view" value="0"/>
 			<param name="auto_shot" value="0"/>
-			<param name="auto_record" value="0"/>
+			<param name="auto_record" value="1"/>
 			<param name="for_gui" value="0"/>
 			
+			<param name="reset_msg" value="0"/>
 			
-			<param name="left_min_interval" value="110"/>
+			<!-- <param name="left_min_interval" value="144"/> -->
+			<param name="left_min_interval" value="128"/>
+			<!-- <param name="left_max_interval" value="147"/> -->
 			<param name="left_max_interval" value="150"/>
-			<param name="right_min_interval" value="120"/>
-			<param name="right_max_interval" value="160"/>
+			<!-- <param name="right_min_interval" value="139"/> -->
+			<param name="right_min_interval" value="118"/>
+			<!-- <param name="right_max_interval" value="142"/> -->
+			<param name="right_max_interval" value="139"/>
 			<param name="right_rotation_y_goal" value="-0.1"/>
 			<param name="left_rotation_y_goal" value="0.1"/>
 			<param name="default_x_goal" value="0.05"/>
@@ -31,17 +36,19 @@
 
 			<param name="record_name" value="/home/seuleee/Desktop/autorace_video_src/0720/stop/1/main_record.avi"/>
 			<!--robotis-->
-			<param name="y_hmin" value="0"/>
-			<param name="y_hmax" value="97"/>
-			<param name="y_smin" value="77"/>
+			<param name="y_hmin" value="9"/>
+			<param name="y_hmax" value="39"/>
+			<param name="y_smin" value="63"/>
+			<!-- <param name="y_smax" value="141"/> -->
 			<param name="y_smax" value="255"/>
 			<param name="y_vmin" value="0"/>
 			<param name="y_vmax" value="255"/>
-			<param name="w_hmin" value="0"/>
-			<param name="w_hmax" value="179"/>
+			<!-- <param name="w_hmin" value="95"/> -->
+			<param name="w_hmin" value="50"/>
+			<param name="w_hmax" value="174"/>
 			<param name="w_smin" value="0"/>
-			<param name="w_smax" value="181"/>
-			<param name="w_vmin" value="220"/>
+			<param name="w_smax" value="81"/>
+			<param name="w_vmin" value="230"/>
 			<param name="w_vmax" value="255"/>
 		</node>
 
@@ -59,6 +66,6 @@
 		</include>
 		-->
 	</group>
-	<include file="$(find control)/launch/control.launch"></include>
+	<!-- <include file="$(find control)/launch/control.launch"></include> -->
 	
 </launch>

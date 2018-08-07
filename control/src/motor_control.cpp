@@ -8,6 +8,7 @@
 #include "std_msgs/MultiArrayLayout.h"
 #include "std_msgs/Int32MultiArray.h"
 #include "std_msgs/Float32MultiArray.h"
+#include "std_msgs/Bool.h"
 #include <pcl_conversions/pcl_conversions.h>
 #include <pcl/point_cloud.h>
 #include <pcl/point_types.h>
@@ -37,8 +38,8 @@ void initParam(ros::NodeHandle& nh){
     nh.param<float>("/motor_control_node/kp",kp,1);
     nh.param<float>("/motor_control_node/ki",ki,0.01);
     nh.param<float>("/motor_control_node/kd",kd,0.01);
-    nh.param<float>("/motor_control_node/v_g",v_g,0.11);
-    nh.param<float>("/motor_control_node/d_stop",d_stop,0.02);
+    nh.param<float>("/motor_control_node/v_g",v_g,0.2);
+    nh.param<float>("/motor_control_node/d_stop",d_stop,0.03);
 }
 
 void updateOdometry(){
@@ -158,32 +159,45 @@ void cloudCallback(const sensor_msgs::PointCloud2ConstPtr& msg)
     //pcl::fromROSMsg(*msg,pc);
 }
 void pidCallback(const std_msgs::Float32MultiArray::ConstPtr& goalData){
-    //goal_v = 0.1;
-    //goal_w = goalData->data[0];
-    int pid_complete = calPid(goalData);
+   goal_v = goalData->data[0];
+   goal_w = goalData->data[1];
+    // int pid_complete = calPid(goalData);
     
-    if(pid_complete){
-         prev_e_k = 0;
-         sum_e_k = 0;
-         odm_x = 0;
-         odm_y = 0;
-         odm_theta = 0;
-         goal_v = 0;
-         goal_w = 0;
-        pid_complete = 0;
+    // if(pid_complete){
+    //     prev_e_k = 0;
+    //     sum_e_k = 0;
+    //     odm_x = 0;
+    //     odm_y = 0;
+    //     odm_theta = 0;
+    //     goal_v = 0.1;
+    //     goal_w = 0;
+    //     pid_complete = 0;//지금은 지역변수니까 초기화 필요 x..
+    // }
+
+}
+void resetMsgCallback(const std_msgs::Bool resetMsg){
+        if(resetMsg.data){
+            prev_e_k = 0;
+            sum_e_k = 0;
+            odm_x = 0;
+            odm_y = 0;
+            odm_theta = 0;
+            goal_v = 0;
+            goal_w = 0;
+           
     }
 }
-
 int main(int argc, char **argv){
     ros::init(argc, argv, "motor_control");
     ros::NodeHandle nh;
-    ros::Rate loop_rate(10);
+    ros::Rate loop_rate(60);
     initParam(nh);
     ros::Publisher twist_pub = nh.advertise<geometry_msgs::Twist>("/cmd_vel",1000); 
 	ros::Publisher cloud_pub = nh.advertise<sensor_msgs::PointCloud2>("/cloud_out",1000);
 	ros::Subscriber state_reader = nh.subscribe("/joint_states",1000,jointCallback); 
 	ros::Subscriber point_reader = nh.subscribe("/cloud_points",1000,cloudCallback);
     ros::Subscriber ang_vel_reader = nh.subscribe("/main/angular_vel",100,pidCallback);
+    ros::Subscriber reset_msg_reader = nh.subscribe("/main/reset_msg",100,resetMsgCallback);
 	//ros::ServiceServer control_srv = nh.advertiseService("/msrv",exec_command);
 	
     geometry_msgs::Twist twist_cmd;
@@ -197,7 +211,9 @@ int main(int argc, char **argv){
         twist_cmd.linear.x = goal_v;
         twist_cmd.angular.z = goal_w;
         twist_pub.publish(twist_cmd);
+        
         loop_rate.sleep();
+        
     }
     return 0;
 }

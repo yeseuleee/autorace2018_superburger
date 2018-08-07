@@ -20,6 +20,8 @@
 #include "std_msgs/MultiArrayLayout.h"
 #include "std_msgs/Int32MultiArray.h"
 #include "std_msgs/Float32MultiArray.h"
+#include "std_msgs/Bool.h"
+#include "std_msgs/Int8.h"
 #include <time.h>
 #include <string>
 #include <math.h>
@@ -44,7 +46,7 @@ static int gazebo;
 static int bird_eye_view;
 static int auto_shot;
 static int auto_record;
-static int for_gui;
+//static int for_gui;
 // 횡단보도 탐지방법 찾기
 static const std::string record_name;
 
@@ -53,8 +55,11 @@ static int right_min_interval, right_max_interval;
 static float right_rotation_y_goal,left_rotation_y_goal;
 static float default_x_goal, default_y_goal;
 
+//** trackbar vailable **//
 static int y_hmin, y_hmax, y_smin, y_smax, y_vmin, y_vmax;
 static int w_hmin, w_hmax, w_smin, w_smax, w_vmin, w_vmax;
+
+static int reset_msg;
 
 typedef pcl::PointCloud<pcl::PointXYZRGB> PointCloud;
 double fps = 3;
@@ -62,6 +67,7 @@ int control_first = 0;
 int fourcc = CV_FOURCC('X','V','I','D'); // codec
 bool isColor = true;
 cv::Point center_pt_t, center_pt_b;
+int center_cali;
 
 cv::VideoWriter video_left;
 cv::VideoWriter video_right;
@@ -71,16 +77,19 @@ static std::string groupName;
 
 lane_detect_algo::vec_mat_t lane_m_vec;
 
-float left_interval, right_interval;
+int pre_left_interval = -1, pre_right_interval = -1;
+int left_interval = -1, right_interval = -1;
+int left_interval_sum = 0, right_interval_sum = 0;
+std::vector<int> left_interval_vec, right_interval_vec;
 float left_ang_vel, right_ang_vel;
 float x_goal_, y_goal_, prev_y_goal_;
 float left_theta = 0;
 float right_theta = 0;
-double test[10] = {0,0,0.1,0,0,0,0.1,0,0,0};
-int test_num = 0;
 
-
-
+std::vector<int> right_doubling_vec, left_doubling_vec;
+int left_steer_avg = 999, right_steer_avg = 999;
+int pre_left_steer_avg = 999, pre_right_steer_avg = 999;
+int dynamic_center_x = 0, dynamic_center_y = 0;
 using namespace lane_detect_algo;
 using namespace std;
 
@@ -94,12 +103,15 @@ public:
         ros::Subscriber depth_sub;
         std_msgs::Int32MultiArray coordi_array;
         std_msgs::Float32MultiArray goal_array;
-        std::vector<int> lane_width_array;
-        //cv::Mat pub_img;
+        std_msgs::Bool reset_val;
         ros::Publisher pub = nh.advertise<std_msgs::Int32MultiArray>("/"+groupName+"/lane",100);//Topic publishing at each camera
         ros::Publisher goal_pub = nh.advertise<std_msgs::Float32MultiArray>("/"+groupName+"/pixel_goal",100);
         ros::Publisher ang_vel_pub = nh.advertise<std_msgs::Float32MultiArray>("/"+groupName+"/angular_vel",100);
+        ros::Publisher reset_msg_pub = nh.advertise<std_msgs::Bool>("/"+groupName+"/reset_msg",100);
         int imgNum = 0;//for saving img
+        int msg_count_left = 0, msg_count_right = 0;
+        int leftlane_turn_value_num = 0, rightlane_turn_value_num = 0;
+        std::vector<int> leftlane_turn_value_vec, rightlane_turn_value_vec;
         cv::Mat output_origin_for_copy;//for saving img
         InitImgObjectforROS();
         ~InitImgObjectforROS();
@@ -107,7 +119,9 @@ public:
         void imgCb(const sensor_msgs::ImageConstPtr& img_msg);
         void initParam();
         void initMyHSVTrackbar(const string &trackbar_name);
+        void initMyRESETTrackbar(const string &trackbar_name);
         void setMyHSVTrackbarValue(const string &trackbar_name);
+        void setMyRESETTrackbarValue(const string &trackbar_name);
         void setColorPreocessing(lane_detect_algo::CalLane callane, cv::Mat src, cv::Mat& dst_y, cv::Mat& dst_w);
         void setProjection(lane_detect_algo::CalLane callane, cv::Mat src, unsigned int* H_aix_Result_color);
         void restoreImgWithLangeMerge(lane_detect_algo::CalLane callane, cv::Mat origin_size_img, cv::Mat src_y, cv::Mat src_w, cv::Mat& dst);
@@ -115,6 +129,13 @@ public:
         void initMyHSVTrackbar_old(const string &trackbar_name, int *hmin, int *hmax, int *smin, int *smax, int *vmin, int *vmax);
         void setMyHSVTrackbarValue_old(const string &trackbar_name,int *hmin, int *hmax, int *smin, int *smax, int *vmin, int *vmax);
         void setPixelGoal(double* goal, int num);
+        void setMySobelwithROI(cv::Mat src, double delete_row_per, const string &lane_name, cv::Mat& dst);
+        void setMyLaneBox(cv::Point t_pt, cv::Point b_pt, const string &lane_name, std::vector<cv::Point> &dst);
+        bool setMyLaneFitting(cv::Mat& src_img, std::vector<cv::Point> src_pt, const string &lane_name, std::vector<cv::Point> &dst);
+        int FittedLaneCheck(std::vector<cv::Point> src, const string &lane_name);
+        void setMyCannywithROI(const string &lane_name, cv::Mat &dst);
+        void errorLaneCheck(const string &lane_name, cv::Mat& src, std::vector<cv::Point> &lane_data, std::vector<cv::Point> lane_roi);
+        void errorLaneCheck2(cv::Mat& src, std::vector<cv::Point> &left_lane_data, std::vector<cv::Point> &right_lane_data);
 };
 
 
@@ -141,6 +162,7 @@ InitImgObjectforROS::InitImgObjectforROS() : it(nh){
         if(track_bar) {
                 initMyHSVTrackbar(groupName+"_YELLOW_TRACKBAR");
                 initMyHSVTrackbar(groupName+"_WHITE_TRACKBAR");
+                initMyRESETTrackbar("reset msg");
         }
 }
 
@@ -153,6 +175,8 @@ InitImgObjectforROS::~InitImgObjectforROS(){
                 cv::destroyWindow(OPENCV_WINDOW_WC);
         }
 }
+
+
 void InitImgObjectforROS::depthMessageCallback(const sensor_msgs::PointCloud2::ConstPtr& input)
 {
       // input.x;
@@ -190,21 +214,12 @@ void InitImgObjectforROS::imgCb(const sensor_msgs::ImageConstPtr& img_msg){
         std::vector<cv::Point> box_pt_y,box_pt_w;
         cv::Point left_slope, right_slope;
         uint frame_height, frame_width;
-        bool is_left_box_true = false, is_right_box_true = false;
-
-        //for capture avi
-      
-        // if(!video->open("/home/seuleee/autorace_video_src/result.avi", fourcc, fps, cv::Size(640/2,480/2), isColor)){
-        // delete video;
-        // return;
-        // }//for capture avi
-        
+        //bool is_left_box_true = false, is_right_box_true = false;        
         try{
                 cv_ptr = cv_bridge::toCvCopy(img_msg,sensor_msgs::image_encodings::BGR8);
                 frame = cv_ptr->image;
                 origin = cv_ptr->image;
-                rec_img = cv_ptr->image;
-                //cv::resize(origin, origin, cv::Size(origin.cols,origin.rows),0,0,CV_INTER_AREA);
+                //rec_img = cv_ptr->image;
                 if(!frame.empty()) {
                         if(!gazebo){//if you use gazebo topic than this condition not used.
                                 cv::resize(origin,frame,cv::Size(origin.cols/2,origin.rows/2),0,0,CV_INTER_AREA);//img downsizing //320 240
@@ -224,387 +239,409 @@ void InitImgObjectforROS::imgCb(const sensor_msgs::ImageConstPtr& img_msg){
                         
 
                         lane_detect_algo::CalLane callane;
-                        unsigned int* H_yResultYellow = new unsigned int[frame_width];
-                        std::memset(H_yResultYellow, 0, sizeof(uint) * frame_width);
-                        unsigned int* H_yResultWhite = new unsigned int[frame_width];
-                        std::memset(H_yResultWhite, 0, sizeof(uint) * frame_width);
-                        unsigned int* H_xResultYellow = new unsigned int[frame_height];
-                        std::memset(H_xResultYellow, 0, sizeof(uint) * frame_height);
-                        unsigned int* H_xResultWhite = new unsigned int[frame_height];
-                        std::memset(H_xResultWhite, 0, sizeof(uint) * frame_height);
 
+                        ////*Testing histogram*////탑뷰 아니면 쓰기 힘들다..
+                        // unsigned int* H_yResultYellow = new unsigned int[frame_width];
+                        // std::memset(H_yResultYellow, 0, sizeof(uint) * frame_width);
+                        // unsigned int* H_yResultWhite = new unsigned int[frame_width];
+                        // std::memset(H_yResultWhite, 0, sizeof(uint) * frame_width);
+                        // unsigned int* H_xResultYellow = new unsigned int[frame_height];
+                        // std::memset(H_xResultYellow, 0, sizeof(uint) * frame_height);
+                        // unsigned int* H_xResultWhite = new unsigned int[frame_height];
+                        // std::memset(H_xResultWhite, 0, sizeof(uint) * frame_height);
+                        //setProjection(callane, yellow_hsv, H_yResultWhite);
                         
-                        /////////////////////////
-
+                        ///////*reset trackbar set*//////////////////
+                        
+                        if(track_bar){
+                                cv::Mat reset_img = cv::Mat::zeros(frame.size(), CV_8UC3);
+                                setMyRESETTrackbarValue("reset msg");
+                                cv::imshow("reset msg",reset_img);
+                                reset_val.data = reset_msg;
+                        }
+                        
                         ////*Process color detection including trackbar setting*////
+                        //컬러영상에 소벨엣지 적용해서 노란색 추출하는방법 생각해보기
+                        
+                        //setColorPreocessing(callane, sobel_v, yellow_hsv, white_hsv);
                         setColorPreocessing(callane, frame, yellow_hsv, white_hsv);
-                        cv::Mat yellow_sobel_v;// = yellow_hsv.clone();
-                        cv::Mat yellow_sobel_h;
-                        cv::Mat yellow_sobel_vh;
-                        
-                        //cv::cvtColor(frame,yellow_sobel_v,CV_BGR2GRAY);
-                        //cv::Sobel(yellow_hsv,yellow_sobel_v,CV_8UC1,1,0);
-                        //if(!debug)cv::imshow("sobeltest_v",yellow_sobel_v);
-                        // cv::Sobel(yellow_hsv,yellow_sobel_h,CV_8UC1,0,1);
-                        // cv::Sobel(yellow_hsv,yellow_sobel_vh,CV_8UC1,0,1);
-                        // if(debug)cv::imshow("sobeltest_h",yellow_sobel_h);
-                        // if(debug)cv::imshow("sobeltest_vh",yellow_sobel_vh);
-                        
-                        //test_sobel
-                        cv::cvtColor(frame,yellow_sobel_v,CV_BGR2GRAY);
-                        cv::Sobel(yellow_sobel_v,yellow_sobel_v,yellow_sobel_v.depth(),1,0);
-                        if(!debug)cv::imshow("sobeltest_v",yellow_sobel_v);
-                        cv::Sobel(yellow_sobel_v,yellow_sobel_h,yellow_sobel_v.depth(),0,1);
-                        if(!debug)cv::imshow("sobeltest_h",yellow_sobel_h);
-                        //if(debug)cv::imshow("sobeltest_vh",yellow_sobel_vh);
-                        
-                        ////*Testing histogram*////
-                        setProjection(callane, yellow_hsv, H_yResultWhite);
-                                
-                        ////*Detect lane by candidate label*////
-                        std::vector<cv::Point> left_lane_fitting, right_lane_fitting; //이 곡률에 offset을 주면 가운데 선을 유지할 수 있겠지
-                        cv::Point tmp_pt, left_mid = cv::Point(-1,-1), right_mid = cv::Point(-1,-1);
-                        cv::Mat rect_result = frame.clone();
-                        //cv::circle(rect_result,cv::Point(rect_result.cols/2,rect_result.rows-30),3,cv::Scalar(20,20,244),2);
-                        cv::line(rect_result,center_pt_t,center_pt_b,cv::Scalar(50,20,233),2);
-                        box_pt_y = callane.makeContoursLeftLane(yellow_hsv, yellow_labeling);//source img channel should be 1
-                        box_pt_w = callane.makeContoursRightLane(white_hsv, white_labeling);//source img channel should be 1
-                        cv::Point left_roi_t(0,frame.rows/2);
-                        cv::Point left_roi_b(frame.cols/2-1,frame.rows-1);
-                        cv::Point right_roi_t(frame.cols/2+1,frame.rows/2);
+                        //cv::Mat yellow_sobel;
+                        //setMySobelwithROI(frame,0.2,"left",yellow_sobel);
+                        cv::Mat yellow_canny = frame.clone();
+                        setMyCannywithROI("left",yellow_canny);
+                        cv::Mat white_sobel;
+                        setMySobelwithROI(frame,0.2,"right",white_sobel);
+                         
+                        //cv::Mat gui_img = frame.clone();
+                        cv::Point left_roi_t(10,frame.rows/2);
+                        cv::Point left_roi_b(frame.cols/2,frame.rows-1);
+                        cv::Point right_roi_t(frame.cols/2,frame.rows/2);
                         cv::Point right_roi_b(frame.cols-1,frame.rows-1);
-			//left_robot_wheel_point, right_robot
-			//이거로 바퀴 위치 알아내고 이때의 js.position[0],[1]등과 비교함.
-			//정확히 가운데있을 경우의 js.position[0],[1]을 알아내서 에러값으로 얼마넘길지 정함
-			//양 차선을 통해 얻은 ang_Vel또한 어떻게 적용해볼지 생각. 일단 이거로 먼저해보고 위에거 써보기.
-			//
+                        
+                        box_pt_y.push_back(left_roi_t);
+                        box_pt_y.push_back(left_roi_b);
+                        yellow_labeling = yellow_canny.clone();
+                        cv::imshow("dddd",yellow_labeling);
+                        int white_valid;
+                        box_pt_w.push_back(right_roi_t);
+                        box_pt_w.push_back(right_roi_b);
+                         cv::medianBlur(white_hsv, white_hsv, 3);
+                        white_valid = callane.makeContoursRightLane(white_hsv, white_labeling);
+
+                        center_pt_t = cv::Point(frame_width/2,0);
+                        center_pt_b = cv::Point(frame_width/2,frame_height-1);
+
                         //**If you use vector type variable, Please cheack your variable is not empty! 
-                        bool left_point = false, right_point = false;
-                        if(!box_pt_y.empty() || !box_pt_w.empty()){
-                                //**left roi editted if that needed
-                                if(!box_pt_y.empty() && !box_pt_w.empty()){
-                                        if(box_pt_y[1].x > left_roi_b.x) box_pt_y[1].x = left_roi_b.x;
-                                        if(box_pt_y[0].y < left_roi_t.y) box_pt_y[0].y = left_roi_t.y;
-                                        if(box_pt_y[0].x > left_roi_t.x){
-                                                //**invailid lane roi to default roi
-                                                box_pt_y[0] = left_roi_t;
-                                                box_pt_y[1] = left_roi_b;
-                                        }
-                                // }
-                                // //**left roi editted if that needed
-                                // if(!box_pt_w.empty()){
-                                        if(box_pt_w[0].x < right_roi_t.x) box_pt_w[0].x = right_roi_t.x;
-                                        if(box_pt_w[0].y < right_roi_t.y) box_pt_w[0].y = right_roi_t.y;
-                                        if(box_pt_w[1].x < right_roi_t.x){
-                                                //**invailid lane roi to default roi
-                                                box_pt_w[0] = right_roi_t;
-                                                box_pt_w[1] = right_roi_b;
-                                        }
+                        //bool left_point = false, right_point = false;
+                        std::vector<cv::Point> left_lane_fitting, right_lane_fitting, dot_lane_fitting;  
+                        int left_lane_turn, right_lane_turn;//, dot_lane_turn;
+                        //*for inner left lane fitting*//
+                       
+                        if(setMyLaneFitting(yellow_labeling, box_pt_y, "left", left_lane_fitting)){
+                                                     
+                                left_lane_turn = FittedLaneCheck(left_lane_fitting,"left");
+                                if(left_lane_turn != 3){
+                                        leftlane_turn_value_num++;
                                 }
-                                
-                                if(!box_pt_w.empty() && !box_pt_y.empty()){
-                                        if(box_pt_y[0].x < box_pt_w[1].x){//두 차선을 모두 찾았고 박싱 위치가 올바를때의 조건
-                                                //모든 차선이 무효일 경우에 대한 주행 알고리즘 작성 필요.(흰색 차선 찾기)
-                                                if(abs(box_pt_y[1].y - box_pt_y[0].y) > 10){
-                                                        if(for_gui) cv::rectangle(rect_result,box_pt_y[0],box_pt_y[1],cv::Scalar(0,0,255),2);
-                                                        is_left_box_true = true;
-                                                }
-                                                if(abs(box_pt_w[1].y - box_pt_w[0].y) > 10){
-                                                        if(for_gui) cv::rectangle(rect_result,box_pt_w[0],box_pt_w[1],cv::Scalar(0,0,255),2);
-                                                        is_right_box_true = true;
-                                                }
-                                        }
-                                        else{//두 차선을 모두 찾았지만 박싱 위치가 올바르지 않다면 아래쪽 박스를 선택
-                                                if(box_pt_y[1].y > box_pt_w[1].y){
-                                                        if(for_gui) cv::rectangle(rect_result,box_pt_y[0],box_pt_y[1],cv::Scalar(0,0,255),2);
-                                                        is_left_box_true = true;
+                                leftlane_turn_value_vec.push_back(left_lane_turn);
+                        }
+                        else{
+                                right_lane_fitting.clear();
+                                right_lane_fitting.resize(0);
+                                yellow_labeling = cv::Mat::zeros(yellow_labeling.size(), CV_8UC3);
+                                if(debug) std::cout<<"invalid left lane"<<std::endl;
+                        }
+                        if(!left_lane_fitting.empty()){
+                               // errorLaneCheck("left", yellow_labeling, left_lane_fitting, box_pt_y);
+                                if(!left_lane_fitting.empty()){
+                                        if(left_lane_fitting.size() > 20){
+                                                if(msg_count_left < 4){
+                                                        left_interval_vec.push_back(center_pt_b.x - left_lane_fitting[20].x);
+                                                        left_interval_sum += center_pt_b.x - left_lane_fitting[20].x;  
                                                 }
                                                 else{
-                                                        if(for_gui) cv::rectangle(rect_result,box_pt_w[0],box_pt_w[1],cv::Scalar(0,0,255),2);
-                                                        is_right_box_true = true;
-                                                }
-                                        }
-                                }
-                                else if(box_pt_w.empty()){//한 차선만 찾은 경우
-                                        if(for_gui) cv::rectangle(rect_result,box_pt_y[0],box_pt_y[1],cv::Scalar(0,0,255),2);
-                                        //right_interval = -9999;
-                                        is_left_box_true = true;
-                                }
-                                else if(box_pt_y.empty()){
-                                        if(for_gui) cv::rectangle(rect_result,box_pt_w[0],box_pt_w[1],cv::Scalar(0,0,255),2);
-                                        //left_interval = -9999;
-                                        is_right_box_true = true;
-                                }
-                                
-                                center_pt_t = cv::Point(frame_width/2,0);
-                                center_pt_b = cv::Point(frame_width/2,frame_height-1);
-                                
-                                //*for inner left lane fitting*//
-                                cv::Point left_nodal_pt_t, left_nodal_pt_b;
-                                double left_y_intercept;
-                                double left_gradient;
-                               
-                                if(is_left_box_true && !box_pt_y.empty()){//여기선 empty조건은 뺴도 될
-                                        for(int y = box_pt_y[1].y; y > box_pt_y[0].y; y--) {
-                                                uchar* origin_data = yellow_labeling.ptr<uchar>(y);
-                                                for(int x = box_pt_y[1].x; x > box_pt_y[0].x; x--) {                                
-                                                        if(origin_data[x]!= (uchar)0) {
-                                                                left_lane_fitting.push_back(cv::Point(x,y));
-                                                                //cv::circle(rect_result,cv::Point(x,y),10,cv::Scalar(200,40,40));
-                                                                break;
+
+                                                        int left_interval_avg = left_interval_sum/left_interval_vec.size();
+                                                        std::vector<int> avg_diff_vec;
+                                                        for(uint j = 0; j<left_interval_vec.size(); j++){
+                                                                avg_diff_vec.push_back(abs(left_interval_vec[j]-left_interval_avg));
                                                         }
-                                                }
-                                                if(!left_lane_fitting.empty() && y == box_pt_y[0].y + 1){
-                                                        //left_mid = cv::Point(left_lane_fitting[left_lane_fitting.size()/2].x,left_lane_fitting[left_lane_fitting.size()/2].y);
-                                                        //cv::circle(rect_result,left_lane_fitting[10],10,cv::Scalar(200,40,40));
-                                                        left_interval = center_pt_b.x - left_lane_fitting[10].x;
-                                                        std::cout<<"left_interval : "<<center_pt_b.x - left_lane_fitting[10].x<<std::endl;
-                                                        if(for_gui){
-                                                                cv::line(rect_result,left_lane_fitting[10],left_lane_fitting[(left_lane_fitting.size()/4)*3],cv::Scalar(100,50,250),2);
-                                                                // for(int i = 0; i<20; i++)
-                                                                //         std::cout<<"left fit["<<i<<"] : "<<left_lane_fitting[i]<<std::endl;
-                                                                left_nodal_pt_b = left_lane_fitting[10];
-                                                                left_nodal_pt_t = left_lane_fitting[(left_lane_fitting.size()/4)*3];
-                                                                if(left_nodal_pt_t.x - left_nodal_pt_b.x != 0){
-                                                                        left_gradient = (left_nodal_pt_t.y - left_nodal_pt_b.y)/(left_nodal_pt_t.x - left_nodal_pt_b.x);
+                                                        int max_diff = -9999;
+                                                        for(uint j = 0; j<avg_diff_vec.size(); j++){
+                                                                if(avg_diff_vec[j] > max_diff){
+                                                                        max_diff = avg_diff_vec[j];
+                                                                }
+                                                        }
+                                                        left_interval_sum = 0;
+                                                        int bigger_diff_sum = 0, lower_diff_sum = 0;
+                                                        int error_diff = 0, bigger_cnt = 0, lower_cnt = 0;
+                                                        for(uint j = 0; j<avg_diff_vec.size(); j++){
+                                                                // if(abs(avg_diff_vec[j] - max_diff) < 10){
+                                                                //         left_interval_sum += left_interval_vec[j];
+                                                                //         sum_cnt++;
+                                                                // }
+                                                               
+                                                                if(abs(avg_diff_vec[j] - max_diff) < 10){
+                                                                        bigger_diff_sum += left_interval_vec[j];
+                                                                        error_diff++;
+                                                                        bigger_cnt++;
                                                                 }
                                                                 else{
-                                                                        left_gradient = 9999;//for gradient setting infinity value
+                                                                        lower_diff_sum += left_interval_vec[j];
+                                                                        lower_cnt++;
                                                                 }
-                                                                left_y_intercept = -left_gradient*(left_nodal_pt_b.x) - left_nodal_pt_b.y;////y = left_gradient*x + left_y_intercept
-                                                                
-                                                                //** left_lane_fitting equation: y = left_gradient*x + left_y_intercept
-                                                                //** nodal point y (x is zero) : y = left_y_intercept
-                                                                cv::line(rect_result,left_nodal_pt_b,center_pt_b,cv::Scalar(244,244,0),3);
-                                                                left_theta = atan2f(abs((float)left_lane_fitting[10].y-(float)left_y_intercept), abs((float)left_lane_fitting[10].x - (float)center_pt_b.x));
-                                                                std::cout<<"====left_theta :"<<left_theta<<std::endl;
-                                                                
-                                                                //** draw offset line(should be set offset x coordinate)
-                                                                //cv::polylines(rect_result,left_lane_fitting,false,cv::Scalar(100,50,50),2);
+                                                        }
+                                                        if(error_diff >= avg_diff_vec.size()/2){
+                                                                if(bigger_cnt != 0) left_interval = bigger_diff_sum/bigger_cnt;
+                                                        }
+                                                        else{
+                                                                if(lower_cnt != 0) left_interval = lower_diff_sum/lower_cnt;
                                                         }
                                                         
-                                                        left_point = true;
-                                                        break;
                                                 }
+                                                msg_count_left++;
                                         }
-                                }///left///
-
-                                
-                                //*for inner rifght lane fitting*// 
-                                cv::Point right_nodal_pt_t, right_nodal_pt_b;
-                                double right_y_intercept;
-                                double right_gradient;
-                                //double right_theta, right_degree;
-                                if(is_right_box_true && !box_pt_w.empty()){
-                                        for(int y = box_pt_w[1].y; y>box_pt_w[0].y; y--) {
-                                                uchar* origin_data = white_labeling.ptr<uchar>(y);
-                                                for(int x = box_pt_w[0].x; x<box_pt_w[1].x; x++) {                                
-                                                        if(origin_data[x]!= (uchar)0) {
-                                                                right_lane_fitting.push_back(cv::Point(x,y));
-                                                                break;
-                                                        }
-                                                }
-                                                if(!right_lane_fitting.empty() && y == box_pt_w[0].y + 1){//박스안에 차선으로 꽉차있으면 이 조건에 안걸릴 수있으므로 조건 추가
-                                                        //right_mid = cv::Point(right_lane_fitting[right_lane_fitting.size()/2].x,right_lane_fitting[right_lane_fitting.size()/2].y);
-                                                        right_interval = right_lane_fitting[10].x - center_pt_b.x;
-                                                        std::cout<<"right_interval : "<<right_lane_fitting[10].x - center_pt_b.x<<std::endl;
-                                                        if(for_gui){
-                                                                cv::line(rect_result,right_lane_fitting[10],right_lane_fitting[(right_lane_fitting.size()/4)*3],cv::Scalar(100,50,250),2);
-                                                                right_nodal_pt_b = right_lane_fitting[10];
-                                                                right_nodal_pt_t = right_lane_fitting[(right_lane_fitting.size()/4)*3];
-                                                                if(right_nodal_pt_t.x - right_nodal_pt_b.x != 0){       
-                                                                        right_gradient = (right_nodal_pt_t.y - right_nodal_pt_b.y)/(right_nodal_pt_t.x - right_nodal_pt_b.x);
-                                                                }
-                                                                else{
-                                                                        right_gradient = 9999;//for gradient setting infinity value
-                                                                }
-                                                                right_y_intercept = -right_gradient*(right_nodal_pt_b.x) - right_nodal_pt_b.y;
-                                                                //** right_lane_fitting equation : y = right_gradient*x + right_y_intercept **//
-                                                                //** nodal point y (x is zero) : y = right_y_intercept **//
-                                                                cv::line(rect_result,right_lane_fitting[10],center_pt_b,cv::Scalar(244,244,0),3);
-                                                                right_theta = atan2f(abs((float)right_lane_fitting[10].y-(float)right_y_intercept),abs((float)right_lane_fitting[10].x - (float)center_pt_b.x));
-                                                                std::cout<<"====right_theta :"<<right_theta<<std::endl;
-                                                                //** draw offset line(should be set offset x coordinate) **//
-                                                                //cv::polylines(rect_result,right_lane_fitting,false,cv::Scalar(100,50,50),2);
-                                                        }
-                                                        
-                                                        right_point = true;
-                                                        break;
-                                                }
+                                        else{
+                                                msg_count_left = 0;
+                                                left_interval_vec.clear();
+                                                left_interval_vec.resize(0);
                                         }
-                                }/// right////////////////////
-
-
-                                ///이 정보는 보류...
-                                // if( (is_left_box_true||is_right_box_true) && (left_point || right_point)){
-                                //         if(left_point && right_point){// 이미 넘어온 영상에서 윗부분 거르니까 y값의 범위는 신경 안씀. x도 위에서 어느정도 보정됨
-                                //                 try{
-                                //                         if(left_mid.x>0 && left_mid.x<rect_result.cols-1){
-                                //                                 cv::line(rect_result,cv::Point(left_mid.x,0),cv::Point(left_mid.x,rect_result.rows-1),cv::Scalar(140,30,55),2);
-                                //                         }
-                                //                         else if(left_mid.x<=0){
-                                //                                 cv::line(rect_result,cv::Point(left_mid.x+1,0),cv::Point(left_mid.x+1,rect_result.rows-1),cv::Scalar(140,30,55),2);
-                                //                         }
-                                //                         else if(left_mid.x >= rect_result.cols-1){
-                                //                                 cv::line(rect_result,cv::Point(left_mid.x-1,0),cv::Point(left_mid.x-1,rect_result.rows-1),cv::Scalar(140,30,55),2);
-                                //                         }
-                                //                         if(right_mid.x>0 && right_mid.x<rect_result.cols-1){
-                                //                                 cv::line(rect_result,cv::Point(right_mid.x,0),cv::Point(right_mid.x,rect_result.rows-1),cv::Scalar(140,30,55),2); 
-                                //                         }
-                                //                         else if(right_mid.x <= 0){
-                                //                                 cv::line(rect_result,cv::Point(right_mid.x,0),cv::Point(right_mid.x,rect_result.rows-1),cv::Scalar(140,30,55),2); 
-                                //                         }
-                                //                         else if(right_mid.x >= rect_result.cols-1){
-                                //                                 cv::line(rect_result,cv::Point(right_mid.x,0),cv::Point(right_mid.x,rect_result.rows-1),cv::Scalar(140,30,55),2); 
-                                //                         }
-                                //                         cv::line(rect_result,cv::Point(right_mid.x,0),cv::Point(right_mid.x,rect_result.rows-1),cv::Scalar(140,30,55),2); 
-                                //                         //cv::rectangle(rect_result,left_mid,right_mid,cv::Scalar(140,30,55),1);
-                                //                 }
-                                //                 catch(cv_bridge::Exception& e) {
-                                //                         ROS_ERROR("rectangle error : %s", e.what());
-                                //                         return;
-                                //                 }
-                                                
-                                //         }
-                                //         else if(!left_point && right_point){//left_point false
-                                //               cv::line(rect_result,cv::Point(right_mid.x,0),cv::Point(right_mid.x,rect_result.rows-1),cv::Scalar(140,30,55),2);
-                                //               //영상의 범위를 넘지 않도록 선 그릴
-                                //         }
-                                //         else if(!right_point && left_point){
-                                //               cv::line(rect_result,cv::Point(left_mid.x,0),cv::Point(left_mid.x,rect_result.rows-1),cv::Scalar(140,30,55),2);
-                                              
-                                //         }
                                         
-                                // }
-                                
-                                
-
-                                ///////param goal test/////
-                                // bool param_state;
-                                // nh.setParam("/control/wait",true);
-                                // nh.getParam("/control/wait",param_state);
-                                // setPixelGoal(test,test_num);
+                                }
+                                else{
+                                        left_interval = -1;
+                                }
+                        }
+                        if(white_valid != -1){
+                                //*for inner right lane fitting*// 
+                                if(setMyLaneFitting(white_labeling, box_pt_w, "right", right_lane_fitting)){    
+                                        right_lane_turn = FittedLaneCheck(right_lane_fitting,"right");
+                                        if(right_lane_turn != 3){
+                                                rightlane_turn_value_num++;
+                                        }
+                                        rightlane_turn_value_vec.push_back(right_lane_turn);
+                                }
+                                else{
+                                       white_labeling = cv::Mat::zeros(white_labeling.size(), CV_8UC3);
+                                       right_lane_fitting.clear();
+                                       right_lane_fitting.resize(0);
+                                       if(debug) std::cout<<"invaild right lane"<<std::endl;
+                                }
+                                std::vector<cv::Point> dot_test_box_pt_w;
+                                dot_test_box_pt_w.push_back(cv::Point(frame.cols/2,frame.rows/2));
+                                dot_test_box_pt_w.push_back(cv::Point(frame.cols-1,frame.rows-1));
+                                if(setMyLaneFitting(white_hsv,dot_test_box_pt_w, "dot_test", dot_lane_fitting)){
+                                        FittedLaneCheck(dot_lane_fitting,"dot_test");
+                                }//도트는 선 따로 피팅하자~~
+                                else{
+                                      right_lane_fitting.clear();
+                                      right_lane_fitting.resize(0);
+                                      white_labeling = cv::Mat::zeros(white_labeling.size(), CV_8UC3);  
+                                      if(debug) std::cout<<"invaild right label"<<std::endl;
+                                }
+                        }
+                        if(!right_lane_fitting.empty()){
+                               // errorLaneCheck("right", white_labeling, right_lane_fitting, box_pt_w);
+                                if(!right_lane_fitting.empty()){
+                                        if(right_lane_fitting.size()>20){
+                                                if(msg_count_right < 4){
+                                                        right_interval_vec.push_back(right_lane_fitting[20].x - center_pt_b.x);
+                                                        right_interval_sum += right_lane_fitting[20].x - center_pt_b.x;  
+                                                        
+                                                }
+                                                else{
+                                                        int right_interval_avg = right_interval_sum/right_interval_vec.size();
+                                                        std::vector<int> avg_diff_vec;
+                                                        for(uint j = 0; j<right_interval_vec.size(); j++){
+                                                                 avg_diff_vec.push_back(abs(right_interval_vec[j]-right_interval_avg));
+                                                        }
+                                                        // std::cout<<"interver vec : "<<right_interval_vec.size()<<std::endl;
+                                                        // std::cout<<"diff_vec : "<<avg_diff_vec.size()<<std::endl;
+                                                        int max_diff = -9999;
+                                                        for(uint j = 0; j<avg_diff_vec.size(); j++){
+                                                                if(avg_diff_vec[j] > max_diff){
+                                                                         max_diff = avg_diff_vec[j];
+                                                                }
+                                                        }
+                                                        right_interval_sum = 0;
+                                                        int bigger_diff_sum = 0, lower_diff_sum = 0;
+                                                        int error_diff = 0, bigger_cnt = 0, lower_cnt = 0;
+                                                        for(uint j = 0; j<avg_diff_vec.size(); j++){
+                                                                if(abs(avg_diff_vec[j] - max_diff) < 10){
+                                                                        bigger_diff_sum += right_interval_vec[j];  
+                                                                        error_diff++;
+                                                                        bigger_cnt++;
+                                                                }
+                                                                else{
+                                                                        lower_diff_sum += right_interval_vec[j];
+                                                                        lower_cnt++;
+                                                                }
+                                                        }   
+                                                        if(error_diff >= avg_diff_vec.size()/2){
+                                                                if(bigger_cnt != 0) right_interval = bigger_diff_sum/bigger_cnt;
+                                                        }
+                                                        else{
+                                                                if(lower_cnt != 0) right_interval = lower_diff_sum/lower_cnt;
+                                                        }
+                                                }
+                                                msg_count_right++;
+                                        }
+                                        else{
+                                                msg_count_right = 0;
+                                                right_interval_vec.clear();
+                                                right_interval_vec.resize(0);
+                                        }
+                                }
+                                else{
+                                        std::cout<<"sibal       "<<std::endl;
+                                        right_interval = -1;
+                                }
+                        }
+                        ///////**param goal test/////
+                        // bool param_state;
+                        // nh.setParam("/control/wait",true);
+                        // nh.getParam("/control/wait",param_state);
+                        // setPixelGoal(test,test_num);
                         
-                                
-                        }
-
-                        ///** please make function
-                        //계수들 다 런치파일로 옮기기
-                        x_goal_ = 0.05; //default x goal
-                        y_goal_ = 0; //default y goal
-
-                        if(is_left_box_true && !is_right_box_true){//tracking left lane(yellow lane)
-                                if(left_interval > left_min_interval && left_interval < left_max_interval){//go straight condition
-                                        y_goal_ = 0;        
+                        //left와 right인터벌을 뽑아내는 벡터 위치를 보정할지 말지 결정하자.
+                        x_goal_ = 0.1;
+                        y_goal_ = 0.0;
+                        if(msg_count_left >= 5 ||  msg_count_right >= 5){
+                                std::cout<<"1 x_goal_ : "<<x_goal_<<std::endl;
+                                std::cout<<"1 y_goal_ : "<<y_goal_<<std::endl;
+                                std::cout<<"right_interval : "<<right_interval<<std::endl;
+                                std::cout<<"left_interval : "<<left_interval<<std::endl;
+                                if(pre_left_interval != -1){
+                                        if(abs(pre_left_interval - left_interval) > 99) left_interval = pre_left_interval;
                                 }
+                                if(pre_right_interval != -1){
+                                        if(abs(pre_right_interval - right_interval) > 99) right_interval = pre_right_interval;
+                                }
+                                if(!left_lane_fitting.empty() && !right_lane_fitting.empty()){//tracking left lane(yellow lane)
                                 
-                                        //** left lane tracking condition
-                                        if(left_interval <= left_min_interval){//need right rotation(ang_vel<0 : right rotation)
-                                                y_goal_ = -0.01;
-                                                //y_goal_ = abs(left_theta);
+                                        if(msg_count_left >= 5){
+                                                if(left_interval == -1) left_interval = left_min_interval + 1;
+                                                if(left_interval > left_min_interval && left_interval < left_max_interval){//go straight condition
+                                                        y_goal_ = 0;        
+                                                }
+                                                else{        //** left lane tracking condition
+                                                        if(left_interval <= left_min_interval){//need right rotation(ang_vel<0 : right rotation)
+                                                                if(abs(left_interval - left_min_interval) < 10) y_goal_ = -0.17;
+                                                                else if(abs(left_interval - left_min_interval) >= 10 && abs(left_interval - left_min_interval) < 20) y_goal_ = -0.27;
+                                                                else y_goal_ = -0.37;        
+                                                        }
+                                                        else{//need left rotation(ang_vel>0 : left rotation)
+                                                                if(abs(left_interval - left_max_interval) < 10) y_goal_ = 0.17;
+                                                                else if(abs(left_interval - left_max_interval) >= 10 && abs(left_interval - left_max_interval) < 20) y_goal_ = 0.27;
+                                                                else y_goal_ = 0.37;
+                                                                
+                                                        }
+                                                }
                                         }
-                                        else{//need left rotation(ang_vel>0 : left rotation)
-                                                y_goal_ = 0.01;
+                                        if(msg_count_right >= 5){
                                                 
+                                                if(right_interval == -1) right_interval = right_min_interval + 1;
+                                                if(right_interval > right_min_interval && right_interval < right_max_interval){//go straight condition
+                                                        y_goal_ += (float)0.0;        
+                                                }
+                                                else{
+                                                        //** right lane tracking condition
+                                                        if(right_interval <= right_min_interval){//need left rotation(ang_vel>0 : left rotation)
+                                                                if(abs(right_interval - right_min_interval) < 10) y_goal_ += (float)0.17;
+                                                                else if(abs(left_interval - left_min_interval) >= 10 && abs(left_interval - left_min_interval) < 20) y_goal_ += (float)0.27;
+                                                                else y_goal_ += (float)0.37;
+                                                                
+                                                        }
+                                                        else{//need right rotation(ang_vel<0 : right rotation)
+                                                                if(abs(right_interval - right_max_interval) < 10) y_goal_ += (float)-0.17;
+                                                                else if(abs(left_interval - left_max_interval) >= 10 && abs(left_interval - left_max_interval) < 20) y_goal_ += (float)-0.27;
+                                                                else y_goal_ += (float)-0.37;
+                                                        
+                                                        }
+                                                }     
                                         }
-
                                 
-                        }
-                        else if(is_right_box_true && !is_left_box_true){//tracking right lane(white lane)
-                                float right_degree = right_theta*180/CV_PI;
-                                float left_degree = left_theta*180/CV_PI;
-                                float sum_degree = right_degree + left_degree;
-                                if(right_interval > right_min_interval && right_interval < right_max_interval){//go straight condition
                                         
-                                        y_goal_ = 0;        
                                 }
-          
-                                        //** right lane tracking condition
-                                        if(right_interval <= right_min_interval){//need left rotation(ang_vel>0 : left rotation)
-                                                y_goal_ = 0.01;
-                                                
+                                else if(!right_lane_fitting.empty() && left_lane_fitting.empty()){//tracking right lane(white lane)
+                                        if(msg_count_right >= 5){
+                                                if(pre_right_interval != -1){
+                                                        if(abs(pre_right_interval - right_interval) > 99) right_interval = right_min_interval +1;
+                                                }
+                                                if(right_interval == -1) right_interval = right_min_interval + 1;
+                                                if(right_interval > right_min_interval && right_interval < right_max_interval){//go straight condition
+                                                        y_goal_ = 0;        
+                                                }
+                                                else{
+                                                        //** right lane tracking condition
+                                                        if(right_interval <= right_min_interval){//need left rotation(ang_vel>0 : left rotation)
+                                                                if(abs(right_interval - right_min_interval) < 10) y_goal_ = 0.17;
+                                                                else if(abs(left_interval - left_min_interval) >= 10 && abs(left_interval - left_min_interval) < 20) y_goal_ = 0.27;
+                                                                else y_goal_ = 0.37;
+                                                        }
+                                                        else{//need right rotation(ang_vel<0 : right rotation)
+                                                                if(abs(right_interval - right_max_interval) < 10) y_goal_ = -0.1;
+                                                                else if(abs(left_interval - left_max_interval) >= 10 && abs(left_interval - left_max_interval) < 20) y_goal_ = -0.27;
+                                                                else y_goal_ = -0.37;
+                                                        
+                                                        }
+                                                }
                                         }
-                                        else{//need right rotation(ang_vel<0 : right rotation)
-                                                y_goal_ = -0.01;
-                                                
-                                        }
-
-                        }
-                        else if(is_left_box_true && is_right_box_true){
-
-                                //if all lane(yellow and white) detected, turtlebot following white lane path tracking
-                                if(right_interval > right_min_interval && right_interval < right_max_interval){//go straight condition
-                                        y_goal_ = 0;        
+                                        std::cout<<"5 x_goal_ : "<<x_goal_<<std::endl;
+                                std::cout<<"5 y_goal_ : "<<y_goal_<<std::endl;
                                 }
-                                else{
-                                        if(right_interval <= right_min_interval){//need left rotation(ang_vel>0 : left rotation)
-                                                
-                                                y_goal_ = 0.01;
-                                        }
-                                        else{//need right rotation(ang_vel<0 : right rotation)
-                                                
-                                                y_goal_ = -0.01;
-                                        }
+                                else if(!left_lane_fitting.empty() && right_lane_fitting.empty()){
+                                        std::cout<<"6 x_goal_ : "<<x_goal_<<std::endl;
+                                std::cout<<"6 y_goal_ : "<<y_goal_<<std::endl;
+                                        if(msg_count_left >= 5){
+                                                if(pre_left_interval != -1){
+                                                        if(abs(pre_left_interval - left_interval) > 99) left_interval = left_min_interval + 1;
+                                                }
+                                                if(left_interval == -1) left_interval = left_min_interval + 1;
+                                                if(left_interval > left_min_interval && left_interval < left_max_interval){//go straight condition
+                                                        y_goal_ = 0;        
+                                                }
+                                                else{
+                                                        //** left lane tracking condition
+                                                        if(left_interval <= left_min_interval){//need right rotation(ang_vel<0 : right rotation)
+                                                                if(abs(left_interval - left_min_interval) < 10) y_goal_ = -0.17;
+                                                                else if(abs(left_interval - left_min_interval) >= 10 && abs(left_interval - left_min_interval) < 20) y_goal_ = -0.27;
+                                                                else y_goal_ = -0.37;        
+                                                        }
+                                                        else{//need left rotation(ang_vel>0 : left rotation)
+                                                                if(abs(left_interval - left_max_interval) < 10) y_goal_ = 0.17;
+                                                                else if(abs(left_interval - left_max_interval) >= 10 && abs(left_interval - left_max_interval) < 20) y_goal_ = 0.27;
+                                                                else y_goal_ = 0.37;
+                                                                
+                                                        }
+                                                }
+                                                }
+                                        std::cout<<"8 x_goal_ : "<<x_goal_<<std::endl;
+                                std::cout<<"8 y_goal_ : "<<y_goal_<<std::endl;
                                 }
-                                //x_goal_ = 0.1;//직진주행시 가속
-                                if(left_interval > left_min_interval && left_interval < left_max_interval){//go straight condition
-                                        y_goal_ = 0;        
-                                }
-                                //else if(left_interval + 20 > 50 && left_interval - 20 < 60){//중앙보다 차선쪽에 가까운경우
-                                        //** left lane tracking condition
-                                        if(left_interval <= left_min_interval){//need right rotation(ang_vel<0 : right rotation)
-                                                y_goal_ = -0.01;
-                                                //y_goal_ = abs(left_theta);
+                                else{//if detected no lane, than go straight
+                                        if(prev_y_goal_ < 0){
+                                                x_goal_ = 0;//.08;
+                                                y_goal_ = 0.27;
                                         }
-                                        else{//need left rotation(ang_vel>0 : left rotation)
-                                                y_goal_ = 0.01;
-                                                //y_goal_ = abs(left_theta);
+                                        else if(prev_y_goal_ > 0){
+                                                x_goal_ = 0;//.08;
+                                                y_goal_ = -0.27;
                                         }
-
-                        }
-                        else{//if detected no lane, than go straight
-                                if(prev_y_goal_ < 0){
-                                        x_goal_ = 0;//.08;
-                                        y_goal_ = 0.04;
-                                }
-                                else if(prev_y_goal_ > 0){
-                                        x_goal_ = 0;//.08;
-                                        y_goal_ = -0.04;
-                                }
-                                else{
-                                        y_goal_ = 0;
+                                        else{
+                                                //x_goal_ = 0;
+                                                y_goal_ = 0;
+                                        }
+                                        
+                                        
                                 }
                                 
+                                std::cout<<"x_goal_ : "<<x_goal_<<std::endl;
+                                std::cout<<"y_goal_ : "<<y_goal_<<std::endl;
+                                
+                                goal_array.data.clear();
+                                goal_array.data.resize(0);
+                                goal_array.data.push_back(x_goal_);//linear_vel아님 정확힌 직진방향 x목표점임. 속도변수따로만들기
+                                goal_array.data.push_back(y_goal_);
+                                prev_y_goal_ = y_goal_;
+                                msg_count_left = 0;
+                                msg_count_right = 0;
+                                left_interval_vec.clear();
+                                right_interval_vec.clear();
+                                left_interval_vec.resize(0);
+                                right_interval_vec.resize(0);
+                                pre_left_interval = left_interval;
+                                pre_right_interval = right_interval;
+                                left_interval = -1;
+                                right_interval = -1;
                                 
                         }
-
-                        goal_array.data.clear();
-                        goal_array.data.resize(0);
-                        goal_array.data.push_back(x_goal_);//linear_vel아님 정확힌 직진방향 x목표점임. 속도변수따로만들기
-                        goal_array.data.push_back(y_goal_);
-                        prev_y_goal_ = y_goal_;
-                        std::cout<<"linear_vel"<<x_goal_<<std::endl;
-                        std::cout<<"ang_vel"<<y_goal_<<std::endl;
+                        
                       
-                        if(for_gui){
-                                cv::imshow("result_rect",rect_result);
-                        }
+                        
                         
                         ////*Restore birdeyeview img to origin view*////
                         restoreImgWithLangeMerge(callane,frame,yellow_labeling,white_labeling,mergelane);
-
+                        
                         ////*Make lane infomation msg for translate scan data*////
                         extractLanePoint(origin,mergelane);
 
-                        output_origin_for_copy = origin.clone();
-                        is_left_box_true = false;
-                        is_right_box_true = false;
-                        left_point = false;
-                        right_point = false;
-                        left_interval = 0;
-                        right_interval = 0;
-                        left_theta = 0;
-                        right_theta = 0;
+                        output_origin_for_copy = origin.clone();        
+                        // left_point = false;
+                        // right_point = false;
+                        
+                        // left_theta = 0;
+                        // right_theta = 0;
+                        // if(is_left_box_true && is_right_box_true){
+                        //         center_cali = abs(left_lane_fitting[20].x - right_lane_fitting[20].x)/2;
+                        // }
+                        // else if(is_left_box_true){
+                        //         center_cali = left_lane_fitting[20].x + 50;
+                        // }
+                        // else{
+                        //         center_cali = right_lane_fitting[20].x - 50;
+                        // }
+                        
                 }
                 else{//frame is empty
                         while(frame.empty()) {//for unplugged camera
@@ -612,7 +649,8 @@ void InitImgObjectforROS::imgCb(const sensor_msgs::ImageConstPtr& img_msg){
                                 frame = cv_ptr->image;
                         }
                         x_goal_ = 0;
-                        y_goal_ = 0;
+                        y_goal_ = 0.;//제자리회전시켜보기
+                        center_cali = -1;
                 }
         }
         catch(cv_bridge::Exception& e) {
@@ -655,6 +693,8 @@ void InitImgObjectforROS::initParam(){
         nh.param<float>("/"+groupName+"/lane_detection/default_x_goal",default_x_goal,0.05);
         nh.param<float>("/"+groupName+"/lane_detection/default_y_goal",default_y_goal,0);
 
+        nh.param<int>("/"+groupName+"/lane_detection/reset_msg",reset_msg,0);
+
         nh.param<int>("/"+groupName+"/lane_detection/y_hmin",y_hmin,15);
         nh.param<int>("/"+groupName+"/lane_detection/y_hmax",y_hmax,21);
         nh.param<int>("/"+groupName+"/lane_detection/y_smin",y_smin,52);
@@ -669,6 +709,16 @@ void InitImgObjectforROS::initParam(){
         nh.param<int>("/"+groupName+"/lane_detection/w_vmax",w_vmax,255);
         ROS_INFO("lane_detection %d %d %d %d %d %d %d", debug, web_cam, imshow, track_bar, time_check, lable, gazebo);
         ROS_INFO("imshow %d", imshow);
+}
+
+void InitImgObjectforROS::initMyRESETTrackbar(const string &trackbar_name){
+        cv::namedWindow(trackbar_name,cv::WINDOW_AUTOSIZE);
+        cv::createTrackbar("reset msg",trackbar_name, &reset_msg, 1, NULL);
+        cv::setTrackbarPos("reset msg",trackbar_name, reset_msg);
+}
+void InitImgObjectforROS::setMyRESETTrackbarValue(const string &trackbar_name){
+        reset_msg = cv::getTrackbarPos("reset msg",trackbar_name);
+        nh.setParam("/"+groupName+"/lane_detection/reset_msg",reset_msg);
 }
 
 void InitImgObjectforROS::initMyHSVTrackbar(const string &trackbar_name){
@@ -760,6 +810,8 @@ void InitImgObjectforROS::setColorPreocessing(lane_detect_algo::CalLane callane,
 
                 ////*Make birdeyeview img*////
                 cv::Mat bev;
+
+
                 bev = src.clone();
                 //cv::imshow(groupName+"bev",bev);
                 if(groupName == "main"){//If you test by video, use one camera (please comment out the other camera)
@@ -776,11 +828,11 @@ void InitImgObjectforROS::setColorPreocessing(lane_detect_algo::CalLane callane,
                 }
                 else if(groupName == "left"){
                         callane.birdEyeView_left(src,bev);
-                        if(!debug) cv::imshow("bev_le",bev);
+                        if(debug) cv::imshow("bev_le",bev);
                 }
                 else if(groupName == "right"){
                         callane.birdEyeView_right(src,bev);
-                        if(!debug) cv::imshow("bev_ri",bev);
+                        if(debug) cv::imshow("bev_ri",bev);
                 }
                 
                 
@@ -808,6 +860,7 @@ void InitImgObjectforROS::setProjection(lane_detect_algo::CalLane callane, cv::M
 void InitImgObjectforROS::restoreImgWithLangeMerge(lane_detect_algo::CalLane callane, cv::Mat origin_size_img, cv::Mat src_y, cv::Mat src_w, cv::Mat& dst){
                 ////*Restore birdeyeview img to origin view*////
                 cv::Mat laneColor = src_y | src_w;
+                
                 dst = origin_size_img.clone();
                 
                 if(groupName == "left"){
@@ -863,16 +916,543 @@ void InitImgObjectforROS::extractLanePoint(cv::Mat origin_src, cv::Mat lane_src)
                 coordi_array.data[0] = coordi_count;
 
                 ////*Result img marked lane*////
+                // center_pt_t = cv::Point(center_pt_t.x*2,center_pt_b.y*2);
+                // center_pt_b = cv::Point(center_pt_b.x*2,center_pt_b.y*2);
+                // center_cali = center_cali*2;
+                
+                // if(center_cali != -1){
+                //         cv::line(output_origin,center_pt_t,center_pt_b,cv::Scalar(100,100,200),2);
+                //         cv::line(output_origin,cv::Point(center_cali,center_pt_t.y),cv::Point(center_cali,center_pt_b.y),cv::Scalar(200,100,100),2);
+                // }
+                cv::line(output_origin, cv::Point(0,323), cv::Point(output_origin.cols-1,323),cv::Scalar(23,32,100),2);
                 cv::imshow(groupName+"_colorfulLane",output_origin);
 }
 
 
- void InitImgObjectforROS::setPixelGoal(double* goal, int num){
+void InitImgObjectforROS::setPixelGoal(double* goal, int num){
         //  goal_array.data.clear();
         //  goal_array.data.push_back(goal[num]);
         //  goal_array.data.push_back(goal[num+1]);
         //  std::cout<<"==========goal visible :"<<goal_array.data[0]<<", "<<goal_array.data[1]<<std::endl;
         }
+
+void InitImgObjectforROS::setMySobelwithROI(cv::Mat src, double delete_row_per, const string &lane_name, cv::Mat& dst){
+        cv::cvtColor(src,dst,CV_BGR2GRAY);
+        cv::Mat dst_h = dst.clone();
+        cv::Mat dst_v = dst.clone();
+        cv::Mat element(3,3,CV_8U,cv::Scalar(1)); 
+        cv::Sobel(dst_h,dst_h,dst_h.depth(),0,1);//horizontal
+        cv::Sobel(dst_v,dst_v,dst_v.depth(),1,0);//vertical
+        cv::Mat sobel_dilate = dst_h | dst_v;
+        cv::dilate(sobel_dilate,sobel_dilate,element);
+        dst = sobel_dilate;
+        cv::threshold(dst, dst, 200, 255, cv::THRESH_BINARY);
+         cv::medianBlur(dst, dst, 3);
+        cv::imshow("sobelH",dst); 
+        for(int y = 0; y<dst.rows/2 - 100; y++){
+                uchar* none_roi_data = dst.ptr<uchar>(y);
+                for(int x = 0; x<dst.cols; x++){
+                        if(none_roi_data[x] != (uchar)0){
+                                none_roi_data[x] = (uchar)0;
+                        }
+                }
+        }
+        if(lane_name == "left"){//**set roi for left lane
+                for(int y = 0; y<dst.rows; y++){
+                        uchar* none_roi_data = dst.ptr<uchar>(y);
+                        for(int x = dst.cols-1; x > dst.cols/2; x--){
+                                if(none_roi_data[x] != (uchar)0){
+                                        none_roi_data[x] = (uchar)0;
+                                }
+                        }
+                }
+                for(int y = 0; y<dst.rows; y++){
+                        uchar* none_roi_data = dst.ptr<uchar>(y);
+                        for(int x = 0; x < 11; x++){
+                                if(none_roi_data[x] != (uchar)0){
+                                        none_roi_data[x] = (uchar)0;
+                                }
+                        }
+                }
+        }
+        
+        if(lane_name == "right"){
+                for(int y = 0; y<dst.rows; y++){
+                        uchar* none_roi_data = dst.ptr<uchar>(y);
+                        for(int x = 0; x < dst.cols/2; x++){
+                                if(none_roi_data[x] != (uchar)0){
+                                        none_roi_data[x] = (uchar)0;
+                                }
+                        }
+                }
+        }
+                
+}
+void InitImgObjectforROS::setMyLaneBox(cv::Point t_pt, cv::Point b_pt, const string &lane_name, std::vector<cv::Point> &dst){
+        if(!dst.empty() && lane_name == "left"){
+                if(dst[1].x > b_pt.x) dst[1].x = b_pt.x;
+                if(dst[0].y < t_pt.y) dst[0].y = t_pt.y;
+        }
+        else if(!dst.empty() && lane_name == "right"){
+                if(dst[0].x < t_pt.x) dst[0].x = t_pt.x;
+                if(dst[0].y < t_pt.y) dst[0].y = t_pt.y;
+        }
+}
+bool InitImgObjectforROS::setMyLaneFitting(cv::Mat& src_img, std::vector<cv::Point> src_pt, const string &lane_name, std::vector<cv::Point> &dst){
+       
+        
+        if(lane_name == "left"){
+                for(int y = src_pt[1].y; y > src_pt[0].y; y--) {
+                        uchar* fitting_data = src_img.ptr<uchar>(y);
+                        for(int x = src_pt[1].x; x > src_pt[0].x; x--) {                            
+                                if(fitting_data[x]!= (uchar)0) {
+                                        dst.push_back(cv::Point(x,y));
+                                        break;
+                                }
+                        }
+                }
+                // if(!dst.empty()){
+                //         int cnt = 0, diff_sum = 0, diff_avg = 0, noise_sum = 0, noise_avg = 0;
+                //         if(dst.size()>10){
+                //                 for(uint i = 0; i<9; i++){
+                //                         noise_sum += dst[i].x;
+                //                 }
+                //                 noise_avg = noise_sum/9;
+                //                 for(uint i = 0; i<9; i++){
+                //                         if(dst[i].x < noise_avg){//이건 처음 영상에 노이즈가 엄청 많을 경우에는 적용될 수 없는 알고리즘..
+                //                                 diff_sum += abs(dst[i].x - dst[i+1].x);
+                //                                 cnt++;
+                //                         }
+                //                 }
+                //                 diff_avg = diff_sum/cnt;
+                //         }
+                //         uchar* delete_data;
+                //         for(uint i = 0; i<dst.size()-1; i++){
+                //                 if(abs(dst[i].x - dst[i+1].x) > diff_avg){
+                //                         delete_data = src_img.ptr<uchar>(dst[i+1].y);
+                //                         for(int j = dst[i+1].x; j>0; j--){
+                //                                 delete_data[j] = (uchar)0;
+                //                         }
+                //                         dst.erase(dst.begin()+i+1);
+                //                 }
+                //         }
+                        
+                // }
+        }
+        if(lane_name == "right"){
+                for(int y = src_pt[1].y; y>src_pt[0].y; y--) {
+                        uchar* fitting_data = src_img.ptr<uchar>(y);
+                        for(int x = src_pt[0].x; x<src_pt[1].x; x++) {                                
+                                if(fitting_data[x]!= (uchar)0) {
+                                        dst.push_back(cv::Point(x,y));
+                                        break;
+                                }
+                        }
+                }
+                //if(!dst.empty()){
+                        // for(uint i = 0; i<dst.size()-1; i++){
+                        //         if(abs(dst[i].x - dst[i+1].x)>10){
+                        //                 if((i+6) < dst.size()){
+                        //                         int noise = 0;
+                        //                         std::vector<int> noise_index;
+                        //                         for(uint j = i+2; j<i+7; j++){
+                        //                                 if(abs(dst[i].x-dst[j].x)>10){
+                        //                                         noise++;
+                        //                                         noise_index.push_back(j);   
+                        //                                 }
+                        //                         }
+                        //                         if(noise>2){
+                        //                                 uchar* delete_data = src_img.ptr<uchar>(dst[i].y);
+                        //                                 delete_data[dst[i].x] = 0;
+                        //                                 dst.erase(dst.begin()+i); 
+                        //                         }
+                        //                         else{
+                        //                                 uchar* delete_data = src_img.ptr<uchar>(dst[noise_index[0]].y);
+                        //                                 delete_data[dst[noise_index[0]].x] = 0;
+                        //                                 delete_data = src_img.ptr<uchar>(dst[noise_index[1]].y);
+                        //                                 delete_data[dst[noise_index[1]].x] = 0;
+                        //                                 dst.erase(dst.begin()+noise_index[0]);
+                        //                                 dst.erase(dst.begin()+noise_index[1]);
+                        //                         }
+                        //                 }
+                        //         }   
+                        // }  
+                //}
+                
+        }
+        if(lane_name == "dot_test"){
+                //int check = 0;
+                for(int y = src_pt[1].y; y>src_pt[0].y; y--) {
+                        uchar* fitting_data = src_img.ptr<uchar>(y);
+                        for(int x = src_pt[0].x; x<src_pt[1].x; x++) {                                
+                                if(fitting_data[x]!= (uchar)0) {
+                                        dst.push_back(cv::Point(x,y));
+                                        break;
+                                }
+                        }
+                }          
+        }
+        return true; 
+}
+ int InitImgObjectforROS::FittedLaneCheck(std::vector<cv::Point> src, const string &lane_name){
+        int turn_value = -999;
+        if(lane_name == "left"){
+                int score = 0;//, steep_slope = 0;
+                uint steep_state1 = (src.size()/4)*1, steep_state2 = (src.size()/4)*2, steep_state3 = (src.size()/4)*3;//, steep_state4 = (src.size()/4)*4;
+                float steep_diff1 = -1, steep_diff2 = -1, steep_diff3 = -1;
+                for(uint i = 0; i<src.size(); i++){
+                        if(src[i].x > src[i+1].x){
+                                score--;//weighted turn left
+                        }
+                        else{
+                                score++;//weighted turn right(직선 노란차선은 보통 right 가중이 기본)
+                        }
+                        if(i == steep_state1){//diff<0 : 우회전, diff>0 : 좌회전 
+                                steep_diff1 = atan2f((float)src[steep_state1].y - (float)src[0].y,(float)src[steep_state1].x - (float)src[0].x);
+                                steep_diff1 = steep_diff1 * 180.0 / CV_PI;
+                                if(steep_diff1 > 9999) steep_diff1 = 1000;
+                                if(steep_diff1 < -9999) steep_diff1 = -1000;
+                        }
+                        else if(i == steep_state2){
+                                steep_diff2 = atan2f((float)src[steep_state2].y - (float)src[steep_state1].y, (float)src[steep_state2].x - (float)src[steep_state1].x);
+                                steep_diff2 = steep_diff2 * 180.0 / CV_PI;
+                                if(steep_diff2 > 9999) steep_diff2 = 1000;
+                                if(steep_diff2 < -9999) steep_diff2 = -1000;
+                        }
+                        else if(i == steep_state3){
+                                steep_diff3 = atan2f((float)src[steep_state3].y - (float)src[steep_state2].y, (float)src[steep_state3].x - (float)src[steep_state2].x);
+                                steep_diff3 = steep_diff3 * 180.0 / CV_PI;
+                                if(steep_diff3 > 9999) steep_diff3 = 1000;
+                                if(steep_diff3 < -9999) steep_diff3 = -1000;
+                        }
+                }
+                if(steep_diff1 != -1){
+                        left_doubling_vec.push_back(steep_diff1);
+                }
+                
+                // std::cout.precision(3);
+                // std::cout<<"steep_state2 - steep_state1(left): " <<steep_diff1<<std::endl;
+                // std::cout.precision(3);
+                // std::cout<<"steep_state3 - steep_state2(left) : " <<steep_diff2<<std::endl;
+                // std::cout.precision(3);
+                // std::cout<<"steep_state3 - steep_state2(left) : " <<steep_diff3<<std::endl;
+                // std::cout<<"avg : "<<(steep_diff1+steep_diff2+steep_diff3)/3<<std::endl;
+                if(score > 0) {
+//                        std::cout<<"turn right(by left lane)"<<std::endl;
+                        turn_value = 1;
+                        // if(abs(steep_diff1 - steep_diff2) > 10){
+                        //         if(abs(steep_diff1 - ))
+                        // }
+                }
+                else {
+                        int change_check_x = -1, max_x = -9999, min_x = 9999, max_x_tmp = 0, min_x_tmp = 0, max_loop = -1, min_loop = -1;
+                        //int change_check_y = 0, num_y = 0, pre_num_y = 0;
+                        for(uint i = 0; i<src.size(); i++){
+                                //** check zigzag
+                                if(src[i].x > src[i+1].x){
+                                        if(min_loop == 0) change_check_x++;
+                                        max_x_tmp = src[i].x;
+                                        max_loop = 0;
+                                        if(max_x_tmp >= max_x){
+                                                max_x = max_x_tmp;
+                                        }
+                                        min_loop = 1;
+                                }
+                                else{
+                                        if(max_loop == 0) change_check_x++;
+                                        min_loop = 0;
+                                        min_x_tmp = src[i].x;
+                                        if(min_x_tmp <= min_x){
+                                                min_x = min_x_tmp;
+                                        }
+                                        max_loop = 1;
+                                }
+                                
+                        }
+                        if(change_check_x >=3 && max_x_tmp - min_x_tmp > 20) {
+                                //std::cout<<"ZigZag!!~~(left)"<<std::endl;//right만 지그재그일경우 거긴 점선임
+                                turn_value = 0;
+                        }
+                        else{
+                                //std::cout<<"============turn left(by left lane)"<<std::endl;
+                                turn_value = -1;
+                        }
+                        
+                }
+
+        }
+
+        if(lane_name == "right"){
+                int score = 0;// steep_slope = 0;
+                uint steep_state1 = (src.size()/4)*1, steep_state2 = (src.size()/4)*2, steep_state3 = (src.size()/4)*3, steep_state4 = (src.size()/4)*4;
+                float steep_diff1 = -1, steep_diff2 = -1, steep_diff3 = -1;
+                for(uint i = 0; i<src.size(); i++){
+                        if(src[i].x >= src[i+1].x){
+                                score--;//weighted turn left(직선 흰차선은 보통 left 가중이 기본)
+                        }
+                        else{
+                                score++;//weighted turn right
+                        }
+                        if(i == steep_state1){//diff<0 : 우회전, diff>0 : 좌회전 
+                                steep_diff1 = atan2f((float)src[steep_state1].y - (float)src[0].y,(float)src[steep_state1].x - (float)src[0].x);
+                                steep_diff1 = steep_diff1 * 180.0 / CV_PI;
+                                if(steep_diff1 > 999) steep_diff1 = 1000;
+                                if(steep_diff1 < -999) steep_diff1 = -1000;
+                        }
+                        else if(i == steep_state2){
+                                steep_diff2 = atan2f((float)src[steep_state2].y - (float)src[steep_state1].y,(float)src[steep_state2].x - (float)src[steep_state1].x);
+                                steep_diff2 = steep_diff2 * 180.0 / CV_PI;
+                                if(steep_diff2 > 999) steep_diff2 = 1000;
+                                if(steep_diff2 < -999) steep_diff2 = -1000;
+                                
+                        }
+                        else if(i == steep_state3){
+                                steep_diff3 = atan2f((float)src[steep_state4].y - (float)src[steep_state3].y,(float)src[steep_state4].x - (float)src[steep_state3].x);
+                                steep_diff3 = steep_diff3 * 180.0 / CV_PI;
+                                if(steep_diff3 > 999) steep_diff3 = 1000;
+                                if(steep_diff3 < -999) steep_diff3 = -1000;
+                        }
+
+                }
+                if(steep_diff1 != -1){
+                        right_doubling_vec.push_back(steep_diff1);
+                }
+                
+                // std::cout.precision(3);
+                // std::cout<<"steep_state2 - steep_state1(left): " <<steep_diff1<<std::endl;
+                // std::cout.precision(3);
+                // std::cout<<"steep_state3 - steep_state2(left) : " <<steep_diff2<<std::endl;
+                // std::cout.precision(3);
+                // std::cout<<"steep_state3 - steep_state2(left) : " <<steep_diff3<<std::endl;
+                // std::cout.precision(3);
+                // std::cout<<"avg : "<<(steep_diff1+steep_diff2+steep_diff3)/3.0<<std::endl;
+                if(score > 0) {
+                        //std::cout<<"turn right"<<std::endl;
+                        turn_value = 1;
+                }
+                else {
+                        int change_check_x = -1, max_x = -9999, min_x = 9999, max_x_tmp = 0, min_x_tmp = 0, max_loop = -1, min_loop = -1;
+                        //int change_check_y = 0, num_y = 0, pre_num_y = 0;
+                        for(uint i = 0; i<src.size()/2; i++){
+                                //** check zigzag
+                                if(src[i].x > src[i+1].x){
+                                        if(min_loop == 0 && (max_x - min_x > 20)) change_check_x++;
+                                        max_x_tmp = src[i].x;
+                                        max_loop = 0;
+                                        if(max_x_tmp >= max_x){
+                                                max_x = max_x_tmp;
+                                        }
+                                        min_loop = 1;
+                                }
+                                else{
+                                        if(max_loop == 0 && (max_x - min_x > 20)) change_check_x++;
+                                        min_loop = 0;
+                                        min_x_tmp = src[i].x;
+                                        if(min_x_tmp <= min_x){
+                                                min_x = min_x_tmp;
+                                        }
+                                        max_loop = 1;
+                                }
+                                  
+                        }
+                        if(change_check_x >=5 && max_x_tmp - min_x_tmp > 20) {
+                                //std::cout<<"ZigZag!!~~(right)"<<std::endl;//right만 지그재그일경우 거긴 점선임
+                                turn_value = 0;
+                        }
+                        else{
+                                //std::cout<<"============turn left(by right lane)"<<std::endl;
+                                turn_value = -1;
+                        }       
+                }
+        }
+
+        if(lane_name == "dot_test"){
+                int change_check_y = 0, num_y = 0, pre_num_y = 0;
+                for(uint i = 0; i<src.size()/2; i++){
+                        //** check dot lane
+                        pre_num_y = num_y;
+                        if(src[i].y > src[i+1].y){
+                                num_y++;
+                        }
+                        else{
+                                num_y--;
+                        }
+                        if((pre_num_y > num_y && abs(src[i].y - src[i+1].y)>6) ||
+                           (pre_num_y < num_y && abs(src[i].y - src[i+1].y)>6)) {
+                                change_check_y++;
+                        }  
+                }
+                
+                if(change_check_y >= 2) {
+                        //std::cout<<"#########################################dot lane!!~~(right)"<<std::endl;//right만 지그재그일경우 거긴 점선임
+                        //std::cout<<"dot : "<< src<<std::endl;
+                        turn_value = 3;
+                }
+        }
+        return turn_value;
+ }
+
+void InitImgObjectforROS::setMyCannywithROI(const string &lane_name, cv::Mat &dst){
+        //dst = src.clone();
+        cv::cvtColor(dst,dst,CV_BGR2GRAY);   
+        cv::Canny(dst, dst, (dst.rows + dst.cols) / 4, (dst.rows + dst.cols) / 2);
+        cv::medianBlur(dst, dst, 3);
+        for(int y = 0; y<dst.rows/2 - 100; y++){
+                uchar* none_roi_data = dst.ptr<uchar>(y);
+                for(int x = 0; x<dst.cols; x++){
+                        if(none_roi_data[x] != (uchar)0){
+                                none_roi_data[x] = (uchar)0;
+                        }
+                }
+        }
+        for(int y = dst.rows/2 - 100; y<dst.rows; y++){
+                uchar* none_roi_data = dst.ptr<uchar>(y);
+                for(int x = dst.cols/2; x<dst.cols; x++){
+                        if(none_roi_data[x] != (uchar)0){
+                                none_roi_data[x] = (uchar)0;
+                        }
+                }
+        }
+        for(int y = dst.rows/2 - 100; y<dst.rows; y++){
+                uchar* none_roi_data = dst.ptr<uchar>(y);
+                for(int x = 0; x<11; x++){
+                        if(none_roi_data[x] != (uchar)0){
+                                none_roi_data[x] = (uchar)0;
+                        }
+                }
+        }
+}
+
+void InitImgObjectforROS::errorLaneCheck(const string &lane_name, cv::Mat& src, std::vector<cv::Point> &lane_data, std::vector<cv::Point> lane_roi){
+        if(lane_name == "left"){
+                if(lane_data.size()<30){
+                        lane_data.clear();
+                        lane_data.resize(0);
+                        src = cv::Mat::zeros(src.size(), CV_8UC1);
+                }
+                else{
+                        int error_roi = 0;
+                        for(int i = 0; i<20; i++){
+                                if(lane_data[i].y < (lane_roi[0].y+lane_roi[1].y)/2){
+                                        error_roi++;
+                                }
+                        }
+                        int l_slope = 0, l_temp = 0;
+                        int r_slope = 0, r_temp = 0;
+                        if(error_roi >= 10){
+                                for(uint i = 0; i<lane_data.size()-1; i++){
+                                        if(i%5 == 0){
+                                                if(r_temp > l_temp){
+                                                        r_slope++;
+                                                }
+                                                else{
+                                                        l_slope++;
+                                                }
+                                                r_temp = 0;
+                                                l_temp = 0;
+                                        }
+                                        if(lane_data[i].x > lane_data[i+1].x){
+                                                r_temp++;
+                                        }
+                                        else{
+                                                l_temp++;
+                                        }
+                                }
+                                if(r_slope < l_slope){
+                                        lane_data.clear();
+                                        lane_data.resize(0);
+                                        src = cv::Mat::zeros(src.size(), CV_8UC1);  
+                                }
+                        }
+                }
+        }
+        else if(lane_name == "right"){
+                if(lane_data.size()<30){
+                        lane_data.clear();
+                        lane_data.resize(0);
+                        src = cv::Mat::zeros(src.size(), CV_8UC1);
+                }
+                else{
+                        int error_roi = 0;
+                        for(int i = 0; i<20; i++){
+                                if(lane_data[i].y < (lane_roi[0].y+lane_roi[1].y)/2){
+                                        error_roi++;
+                                }
+                        }
+                        int l_slope = 0, l_temp = 0;
+                        int r_slope = 0, r_temp = 0;
+                        if(error_roi >= 10){
+                                for(uint i = 0; i<lane_data.size()-1; i++){
+                                        if(i%5 == 0){
+                                                if(r_temp > l_temp){
+                                                        r_slope++;
+                                                }
+                                                else{
+                                                        l_slope++;
+                                                }
+                                                r_temp = 0;
+                                                l_temp = 0;
+                                        }
+                                        if(lane_data[i].x > lane_data[i+1].x){
+                                                r_temp++;
+                                        }
+                                        else{
+                                                l_temp++;
+                                        }
+                                }
+                                if(r_slope < l_slope){
+                                        lane_data.clear();
+                                        lane_data.resize(0);
+                                       // src = cv::Mat::zeros(src.size(), CV_8UC1);  
+                                }
+                        }
+                }
+        }
+}
+
+void InitImgObjectforROS::errorLaneCheck2(cv::Mat& src, std::vector<cv::Point> &left_lane_data, std::vector<cv::Point> &right_lane_data){
+       
+                // if(lane_data.size()<30){
+                //         lane_data.clear();
+                //         lane_data.resize(0);
+                //         src = cv::Mat::zeros(src.size(), CV_8UC1);
+                // }
+                // else{
+                //         int error_roi = 0;
+                //         for(int i = 0; i<20; i++){
+                //                 if(lane_data[i].y < (lane_roi[0].y+lane_roi[1].y)/2){
+                //                         error_roi++;
+                //                 }
+                //         }
+                //         int l_slope = 0, l_temp = 0;
+                //         int r_slope = 0, r_temp = 0;
+                //         if(error_roi >= 10){
+                //                 for(uint i = 0; i<lane_data.size()-1; i++){
+                //                         if(i%5 == 0){
+                //                                 if(r_temp > l_temp){
+                //                                         r_slope++;
+                //                                 }
+                //                                 else{
+                //                                         l_slope++;
+                //                                 }
+                //                                 r_temp = 0;
+                //                                 l_temp = 0;
+                //                         }
+                //                         if(lane_data[i].x > lane_data[i+1].x){
+                //                                 r_temp++;
+                //                         }
+                //                         else{
+                //                                 l_temp++;
+                //                         }
+                //                 }
+                //                 if(r_slope < l_slope){
+                //                         lane_data.clear();
+                //                         lane_data.resize(0);
+                //                         src = cv::Mat::zeros(src.size(), CV_8UC1);  
+                //                 }
+                //         }
+                // }
+}
 
 int main(int argc, char **argv){
         ros::init(argc, argv, "lane_detection");
@@ -893,13 +1473,16 @@ int main(int argc, char **argv){
                 else if(groupName == "right")
                         video_right.open("/home/seuleee/Desktop/autorace_video_src/0717/right_record.avi",cv::VideoWriter::fourcc('X','V','I','D'),fps,cv::Size(640/2,480/2), isColor);
                 else if(groupName == "main")
-                        video_main.open("/home/seuleee/Desktop/autorace_video_src/0721/main_record.avi",cv::VideoWriter::fourcc('X','V','I','D'),fps,cv::Size(640/2,480/2), isColor);
+                        video_main.open("/home/seuleee/Desktop/autorace_video_src/0806/main_record.avi",cv::VideoWriter::fourcc('X','V','I','D'),fps,cv::Size(640/2,480/2), isColor);
         }
         
         while(img_obj.nh.ok()) {
                 img_obj.pub.publish(img_obj.coordi_array);
                 img_obj.ang_vel_pub.publish(img_obj.goal_array);
-                img_obj.goal_pub.publish(img_obj.goal_array);
+               // if(img_obj.rightlane_turn_value_num == 30 && img_obj.leftlane_turn_value_num == 30){
+                        img_obj.goal_pub.publish(img_obj.goal_array);
+               // }
+                img_obj.reset_msg_pub.publish(img_obj.reset_val);
                 ros::spinOnce();
                 loop_rate.sleep();
 

@@ -848,7 +848,31 @@ namespace lane_detect_algo{
                             }
                         }
             	}
-                imshow("Ttt",dst);
+                int sum = 0;
+                        //std::cout<<"size : "<<sizeof(H_yResultWhite)<<std::endl;
+                for(int i = 0; i<dst.cols; i++){      
+                    sum += H_result[i]; 
+                }
+                int avg = sum/dst.cols;
+                for (int y = 0; y<dst.rows; y++) {
+                    uchar* hist_data = dst.ptr<uchar>(y);
+                    for (int k = 0; k < dst.cols; k++){
+                        if(hist_data[k]!= 0){
+                            if(k!=0 || k!=dst.cols-1){
+                                if(abs(H_result[k-1]-H_result[k])>30 && abs(H_result[k]-H_result[k+1])>30){
+                                    //
+                                }
+                                else{
+                                    hist_data[k] = (uchar)0;
+                                }
+                                
+                            }
+                            
+                        }
+                    }
+                    
+            	}
+                //imshow("Ttt",dst);
 
                 // // // uchar pixel;
                 // // // unsigned int *H = new unsigned int[src.cols];
@@ -1258,16 +1282,16 @@ namespace lane_detect_algo{
 
 
 
-            std::vector<cv::Point> CalLane::makeContoursLeftLane(cv::Mat src, cv::Mat& dst) {
+            int CalLane::makeContoursLeftLane(cv::Mat src, cv::Mat& dst) {
                 std::vector<std::vector<cv::Point>> countours;
                 std::vector<cv::Vec4i> hierachy;
                 cv::Point pt_left_top, pt_right_bottom;
                 std::vector<cv::Point> box_pt;
-                
+                int is_vaild = -1;
                 
 
                 //** set roi **//
-                for(int y = 0; y<src.rows*0.6; y++){
+                for(int y = 0; y<src.rows/2 - 100; y++){
                     uchar* none_roi_data = src.ptr<uchar>(y);
                     for(int x = 0; x<src.cols; x++){
                         if(none_roi_data[x] != (uchar)0){
@@ -1277,13 +1301,20 @@ namespace lane_detect_algo{
                 }
                 for(int y = 0; y<src.rows; y++){
                     uchar* none_roi_data = src.ptr<uchar>(y);
-                    for(int x = src.cols-30; x<src.cols; x++){
+                    for(int x = src.cols/2; x<src.cols; x++){
                         if(none_roi_data[x] != (uchar)0){
                             none_roi_data[x] = (uchar)0;
                         }
                     }
                 }
-
+                for(int y = src.rows/2 - 100; y<src.rows; y++){
+                    uchar* none_roi_data = src.ptr<uchar>(y);
+                    for(int x = 0; x<11; x++){
+                        if(none_roi_data[x] != (uchar)0){
+                            none_roi_data[x] = (uchar)0;
+                        }
+                    }
+                }
                 cv::findContours(src, countours, hierachy, CV_RETR_LIST, CV_CHAIN_APPROX_SIMPLE, cv::Point(0, 0));
                 dst = cv::Mat::zeros(src.size(), CV_8UC3);
 
@@ -1360,16 +1391,18 @@ namespace lane_detect_algo{
 
 
                 cv::rectangle(draw_lable,cv::Point(left,top),cv::Point(left+width,top+height),cv::Scalar(0,0,255),1);
-                cv::putText(draw_lable, std::to_string(area), cv::Point(left+20,top+20), 
+                cv::putText(draw_lable, std::to_string(height), cv::Point(left+20,top+20), 
                           FONT_HERSHEY_SIMPLEX, 1, Scalar(5,25,255), 2); 
                 imshow("y_lable", draw_lable);
                 
               //-for max area and extra-//  if (area == max_area && width<height && left<src.cols / 2 && width<src.cols / 2) {//이 조건들에 추가조건 더해서 레이블 유효성 검사
              //   if (left<src.cols*0.95 && width<src.cols*1.8/2){
                 //    imshow("y_lable", draw_lable);
-                if (area > avg_area && top + height == max_bottom){
-                    pt_left_top = cv::Point(left,top);
-                    pt_right_bottom = cv::Point(left+width,top+height);
+              //  if (area > avg_area && top + height == max_bottom){
+                  if (area > 5){
+                      if(height > 30) is_vaild++;
+                   // pt_left_top = cv::Point(left,top);
+                  //  pt_right_bottom = cv::Point(left+width,top+height);
                     // if(left+width < src.cols*0.85){
                     //     pt_right_bottom = cv::Point(left+(width/2),top+height);
                     // }
@@ -1383,8 +1416,11 @@ namespace lane_detect_algo{
                     //     pt_left_top = cv::Point(left,top);
                     // }
                     // //??//pt_right_bottom = cv::Point(pt_right_bottom.x,pt_left_top.y+height);
-                    box_pt.push_back(pt_left_top);
-                    box_pt.push_back(pt_right_bottom);
+                    //if(area>5 && max_bottom > 60){
+                      //  box_pt.push_back(pt_left_top);
+                      //  box_pt.push_back(pt_right_bottom);
+                    //}
+                    
                     // if(left+width > src.cols/2 || top < src.rows/2){
                     //             if(left+width > src.cols/2 && top < src.rows/2){
                     //                 pt_left_top = cv::Point(left,top+(height/2));
@@ -1419,7 +1455,7 @@ namespace lane_detect_algo{
                         uchar* delete_data = dst.ptr<uchar>(delete_row);
                         for (int delete_col = dst.cols-1; delete_col>=0; --delete_col) {
                             if ((delete_col > left + width || delete_col < left) || (delete_row<top || delete_row>top + height)) {
-                                    delete_data[delete_col] = (uchar)0;
+                                   // delete_data[delete_col] = (uchar)0;
                             }
 
                             // if ((delete_col > left + width || delete_col < left) ) {
@@ -1447,11 +1483,12 @@ namespace lane_detect_algo{
                 //for(int )/////////////////////////////////////////////////////////////
                     //turn right/////////////////////짜야해!!!///////////////////////////
                 }/////////////////////////////////////////////////////////////////////////
+                
                 else {//delete wrong lable// 위에서 이미 유효 영역 바깥은 다 지우기때문에 얘는 필요 없다. 얘가 존재하면 오히려 이 비유효영역의 레이블이 유효영역을 침범해 그려진 경우 거길 지워버릴 수 있다.
                     for (int row = top; row < top + height; row++) {
                         uchar* data = dst.ptr<uchar>(row);
                         for (int col = left; col < left + width; col++) {//1채널이라 (left+width)에 채널값 안곱함
-                            data[col] = (uchar)0; 
+                           // data[col] = (uchar)0; 
 
                         }
                     }
@@ -1461,19 +1498,19 @@ namespace lane_detect_algo{
                // imshow("lane_left", dst);
                 }
               //  imshow("drawing", draw_max_lable);//for visible lane max lable box
-              return box_pt;
+              return is_vaild;
             }
            void CalLane::crosswalkCheck(cv::Mat){
 
            }
 
-           std::vector<cv::Point> CalLane::makeContoursRightLane(cv::Mat src, cv::Mat& dst){
+           int CalLane::makeContoursRightLane(cv::Mat src, cv::Mat& dst){
                 std::vector<std::vector<cv::Point>> countours;
                 std::vector<cv::Vec4i> hierachy;
                 cv::Point pt_left_top, pt_right_bottom;
                 std::vector<cv::Point> box_pt;
-              
-                for(int y = 0; y<src.rows*0.6; y++){
+                int is_vaild = -1;
+                for(int y = 0; y<src.rows/2 - 100; y++){
                     uchar* none_roi_data = src.ptr<uchar>(y);
                     for(int x = 0; x<src.cols; x++){
                         if(none_roi_data[x] != (uchar)0){
@@ -1483,7 +1520,7 @@ namespace lane_detect_algo{
                 }
                 for(int y = 0; y<src.rows; y++){
                     uchar* none_roi_data = src.ptr<uchar>(y);
-                    for(int x = 0; x < 30; x++){
+                    for(int x = 0; x < src.cols/2; x++){
                         if(none_roi_data[x] != (uchar)0){
                             none_roi_data[x] = (uchar)0;
                         }
@@ -1573,9 +1610,8 @@ namespace lane_detect_algo{
                           FONT_HERSHEY_SIMPLEX, 0.3, Scalar(5,25,255), 2); 
                     cv::imshow("w_lable", draw_lable);
                     //--for max area and extra//    if (area == max_area && width<height && left>src.cols / 3 && width<src.cols / 2) {//이 조건들에 추가조건 더해서 레이블 유효성 검사
-                        if(area > avg_area && top + height == max_bottom){
-                            pt_left_top = cv::Point(left,top);
-                            pt_right_bottom = cv::Point(left+width,top+height);
+                        if(area > 5){
+                            is_vaild++;
                             // if(left < src.cols*0.35){
                             //     pt_left_top = cv::Point(left+(width/2),top);
                             // }
@@ -1589,8 +1625,10 @@ namespace lane_detect_algo{
                             //     pt_left_top = cv::Point(pt_left_top.x,top);
                             // }
                             // pt_right_bottom = cv::Point(left+width,top+height);
-                            box_pt.push_back(pt_left_top);
-                            box_pt.push_back(pt_right_bottom);
+                           // if(area > 5 && max_bottom > 60){
+                               
+                           // }
+                           
                             
                             // if(left < src.cols/2 || top < src.rows/2){
                             //     if(left<src.cols/2 && top < src.rows/2){
@@ -1625,7 +1663,7 @@ namespace lane_detect_algo{
                                 uchar* delete_data = dst.ptr<uchar>(delete_row);
                                 for (int delete_col = 0; delete_col < dst.cols; ++delete_col) {
                                     if ((delete_col > left + width || delete_col < left) || (delete_row<top || delete_row>top + height)) {
-                                        delete_data[delete_col] = (uchar)0;
+                                        //delete_data[delete_col] = (uchar)0;
                                     }
                                     //else {//range of max lable box///////////////////////for visible center line////////////////////////////////////////////
                                     // if (delete_data[delete_col] != 0 && !lane_checked&& coordi_index<dst.cols / 2 * 3) {
@@ -1649,14 +1687,16 @@ namespace lane_detect_algo{
                             for (int row = top; row < top + height; row++) {
                                 uchar* data = dst.ptr<uchar>(row);
                                     for (int col = left; col < left + width; col++) {//1채널이라 (left+width)에 채널값 안곱함
-                                        data[col] = (uchar)0;
+                                         data[col] = (uchar)0;
                                     }
                             }
                         }
                 //    imshow("lane_right", dst);
                     }
               //  imshow("drawing", draw_max_lable);//for visible lane max lable box
-                return box_pt;
+                box_pt.push_back(cv::Point(dst.cols/2,dst.rows/2));
+                box_pt.push_back(cv::Point(dst.cols-1/dst.rows-1));
+                return is_vaild;
             }
 
            void CalLane::makeContoursRightLane(cv::Mat src, cv::Mat& dst, int* crosswalk){
