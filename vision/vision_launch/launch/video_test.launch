@@ -42,7 +42,7 @@
 			<param name="w_hmax" value="179"/>
 			<param name="w_smin" value="0"/>
 			<param name="w_smax" value="29"/>
-			<param name="w_vmin" value="228"/>
+			<param name="w_vmin" value="200"/>
 			<param name="w_vmax" value="255"/>
     </node>
 

@@ -20,13 +20,13 @@
 			<param name="reset_msg" value="0"/>
 			
 			<!-- <param name="left_min_interval" value="144"/> -->
-			<param name="left_min_interval" value="128"/>
+			<param name="left_min_interval" value="125"/>
 			<!-- <param name="left_max_interval" value="147"/> -->
-			<param name="left_max_interval" value="150"/>
+			<param name="left_max_interval" value="134"/>
 			<!-- <param name="right_min_interval" value="139"/> -->
-			<param name="right_min_interval" value="118"/>
+			<param name="right_min_interval" value="121"/>
 			<!-- <param name="right_max_interval" value="142"/> -->
-			<param name="right_max_interval" value="139"/>
+			<param name="right_max_interval" value="140"/>
 			<param name="right_rotation_y_goal" value="-0.1"/>
 			<param name="left_rotation_y_goal" value="0.1"/>
 			<param name="default_x_goal" value="0.05"/>
@@ -47,8 +47,8 @@
 			<param name="w_hmin" value="50"/>
 			<param name="w_hmax" value="174"/>
 			<param name="w_smin" value="0"/>
-			<param name="w_smax" value="81"/>
-			<param name="w_vmin" value="230"/>
+			<param name="w_smax" value="80"/>
+			<param name="w_vmin" value="238"/>
 			<param name="w_vmax" value="255"/>
 		</node>
 

@@ -1291,7 +1291,7 @@ namespace lane_detect_algo{
                 
 
                 //** set roi **//
-                for(int y = 0; y<src.rows/2 - 100; y++){
+                for(int y = 0; y<src.rows/2 ; y++){
                     uchar* none_roi_data = src.ptr<uchar>(y);
                     for(int x = 0; x<src.cols; x++){
                         if(none_roi_data[x] != (uchar)0){
@@ -1307,7 +1307,7 @@ namespace lane_detect_algo{
                         }
                     }
                 }
-                for(int y = src.rows/2 - 100; y<src.rows; y++){
+                for(int y = src.rows/2 ; y<src.rows; y++){
                     uchar* none_roi_data = src.ptr<uchar>(y);
                     for(int x = 0; x<11; x++){
                         if(none_roi_data[x] != (uchar)0){
@@ -1391,15 +1391,15 @@ namespace lane_detect_algo{
 
 
                 cv::rectangle(draw_lable,cv::Point(left,top),cv::Point(left+width,top+height),cv::Scalar(0,0,255),1);
-                cv::putText(draw_lable, std::to_string(height), cv::Point(left+20,top+20), 
-                          FONT_HERSHEY_SIMPLEX, 1, Scalar(5,25,255), 2); 
+                //cv::putText(draw_lable, std::to_string(height), cv::Point(left+20,top+20), 
+                  //        FONT_HERSHEY_SIMPLEX, 1, Scalar(5,25,255), 2); 
                 imshow("y_lable", draw_lable);
                 
               //-for max area and extra-//  if (area == max_area && width<height && left<src.cols / 2 && width<src.cols / 2) {//이 조건들에 추가조건 더해서 레이블 유효성 검사
              //   if (left<src.cols*0.95 && width<src.cols*1.8/2){
                 //    imshow("y_lable", draw_lable);
               //  if (area > avg_area && top + height == max_bottom){
-                  if (area > 5){
+                  if (area > 10){
                       if(height > 30) is_vaild++;
                    // pt_left_top = cv::Point(left,top);
                   //  pt_right_bottom = cv::Point(left+width,top+height);
@@ -1450,10 +1450,39 @@ namespace lane_detect_algo{
                     //         }
                 //if (area == max_area && width<height && left<src.cols-100 && width<src.cols / 2){
               //  if (abs(max_height - height)<100 && abs(max_bottom-(top+height))<50) {//이 조건들에 추가조건 더해서 레이블 유효성 검사
+                    int density = 0, my_area = 0;
+                    for(uint y = top+height; y>top; y--){
+                        uchar * delete_data = dst.ptr<uchar>(y);
+                        for(uint x = left+width; x>left; x--){
+                            if(delete_data[x] != 0){
+                                density++;
+                            }
+                            my_area++;
+                        }
+                    }
+                    // if(area > 300){
+                    //      cv::putText(draw_lable, std::to_string(density), cv::Point(left+8,top-20), 
+                    //        FONT_HERSHEY_SIMPLEX, 0.3, Scalar(5,25,255), 1); 
+                    //  cv::putText(draw_lable, std::to_string(my_area), cv::Point(left+27,top-25), 
+                    //        FONT_HERSHEY_SIMPLEX, 0.3, Scalar(5,25,255), 1.3); 
+                    // }
                     
+                    if(density > my_area*0.2){
+                        for(uint y = top+height; y>top; y--){
+                            uchar * delete_data = dst.ptr<uchar>(y);
+                            for(uint x = left+width; x>left; x--){
+                                if(delete_data[x] != (uchar)0){
+                                    delete_data[x] = (uchar)0;
+                                }
+                            }
+                        }
+                    }
+
                     for (int delete_row = dst.rows - 1; delete_row >= 0; --delete_row) {
                         uchar* delete_data = dst.ptr<uchar>(delete_row);
                         for (int delete_col = dst.cols-1; delete_col>=0; --delete_col) {
+
+
                             if ((delete_col > left + width || delete_col < left) || (delete_row<top || delete_row>top + height)) {
                                    // delete_data[delete_col] = (uchar)0;
                             }
@@ -1488,7 +1517,7 @@ namespace lane_detect_algo{
                     for (int row = top; row < top + height; row++) {
                         uchar* data = dst.ptr<uchar>(row);
                         for (int col = left; col < left + width; col++) {//1채널이라 (left+width)에 채널값 안곱함
-                           // data[col] = (uchar)0; 
+                            data[col] = (uchar)0; 
 
                         }
                     }
@@ -1510,7 +1539,7 @@ namespace lane_detect_algo{
                 cv::Point pt_left_top, pt_right_bottom;
                 std::vector<cv::Point> box_pt;
                 int is_vaild = -1;
-                for(int y = 0; y<src.rows/2 - 100; y++){
+                for(int y = 0; y<src.rows/2 ; y++){
                     uchar* none_roi_data = src.ptr<uchar>(y);
                     for(int x = 0; x<src.cols; x++){
                         if(none_roi_data[x] != (uchar)0){
@@ -1610,7 +1639,7 @@ namespace lane_detect_algo{
                           FONT_HERSHEY_SIMPLEX, 0.3, Scalar(5,25,255), 2); 
                     cv::imshow("w_lable", draw_lable);
                     //--for max area and extra//    if (area == max_area && width<height && left>src.cols / 3 && width<src.cols / 2) {//이 조건들에 추가조건 더해서 레이블 유효성 검사
-                        if(area > 5){
+                        if(area > 10){
                             is_vaild++;
                             // if(left < src.cols*0.35){
                             //     pt_left_top = cv::Point(left+(width/2),top);
@@ -1628,8 +1657,70 @@ namespace lane_detect_algo{
                            // if(area > 5 && max_bottom > 60){
                                
                            // }
-                           
-                            
+
+                        //??? ??? ???? ? ????
+                        // ???? ?? ???
+                        //???? ??? ??? ?
+                        std::vector<int> lane_width;
+                        int my_sum = 0, my_avg = 0, my_cnt = 0;
+                        //saving lane width & inner lane point 
+                        for(uint y = top + height; y > top; y--) {
+                                uchar* fill_data = dst.ptr<uchar>(y);
+                                for(uint x = left; x < (left+width); x++) {                                
+                                        if(fill_data[x]!= (uchar)0) {
+                                                int i = x, width_sum = 0,no_point = 0;
+                                                while(no_point<4){
+                                                    if(i >= (left + width -1) ){
+                                                        lane_width.push_back(width_sum);
+                                                        my_sum += width_sum;
+                                                        break;
+                                                    }
+                                                    if(fill_data[i] != (uchar)0){
+                                                        no_point = 0;
+                                                        width_sum++;
+                                                        i++;
+                                                    }
+                                                    else{
+                                                        no_point++;
+                                                        i++;
+                                                        width_sum++;
+                                                    }
+                                                }
+                                                if(width_sum > 4){
+                                                    lane_width.push_back(width_sum);
+                                                    my_sum += width_sum;
+                                                    my_cnt++;
+                                                }
+                                                break;
+                                                
+                                        }
+                                }
+                        }
+                        if(!lane_width.empty() && my_cnt != 0){
+                            my_avg = my_sum / my_cnt;
+                            int reliability = 0;
+                            for(int i = 0; i<lane_width.size(); i++){
+                                    if(abs(lane_width[i] - lane_width[i+1]) < 10){
+                                        reliability++;
+                                    }
+                                    else{
+                                        reliability--;
+                                    }
+                                    if(lane_width[i] > 30) reliability--; 
+                            }
+                            if(reliability < 0){
+                                    for(uint y = top+height; y > top; y--){
+                                        uchar* delete_data = dst.ptr<uchar>(y);
+                                        for(uint x = left; x < (left+width); x++){
+                                            if(delete_data[x] != (uchar)0){
+                                                delete_data[x] = (uchar)0;
+                                            }
+                                        }
+                                    }
+                            }
+                        }
+                        
+                                                
                             // if(left < src.cols/2 || top < src.rows/2){
                             //     if(left<src.cols/2 && top < src.rows/2){
                             //         pt_left_top = cv::Point(left+(width/2),top+(height/2));
