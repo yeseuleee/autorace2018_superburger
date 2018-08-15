@@ -190,7 +190,7 @@ void resetMsgCallback(const std_msgs::Bool resetMsg){
 int main(int argc, char **argv){
     ros::init(argc, argv, "motor_control");
     ros::NodeHandle nh;
-    ros::Rate loop_rate(60);
+    ros::Rate loop_rate(30);
     initParam(nh);
     ros::Publisher twist_pub = nh.advertise<geometry_msgs::Twist>("/cmd_vel",1000); 
 	ros::Publisher cloud_pub = nh.advertise<sensor_msgs::PointCloud2>("/cloud_out",1000);
@@ -208,8 +208,16 @@ int main(int argc, char **argv){
     
     while(ros::ok()){  
         ros::spinOnce(); //call all callback functions
-        twist_cmd.linear.x = goal_v;
-        twist_cmd.angular.z = goal_w;
+	if(goal_v < 2 && goal_v > -2){
+		twist_cmd.linear.x = goal_v;
+	}
+        else{
+		goal_v = 0.1;
+		twist_cmd.linear.x = goal_v;
+	}
+	if(goal_w < 2 && goal_w > -2){
+		twist_cmd.angular.z = goal_w;
+	}
         twist_pub.publish(twist_cmd);
         
         loop_rate.sleep();

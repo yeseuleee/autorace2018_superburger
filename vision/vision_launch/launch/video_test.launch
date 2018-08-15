@@ -44,6 +44,35 @@
 			<param name="w_smax" value="29"/>
 			<param name="w_vmin" value="200"/>
 			<param name="w_vmax" value="255"/>
+
+			<param name="r_hmin" value="160"/>
+			<param name="r_hmax" value="179"/>
+			<param name="r_smin" value="0"/>
+			<param name="r_smax" value="63"/>
+			<param name="r_vmin" value="243"/>
+			<param name="r_vmax" value="255"/>
+
+
+			<param name="r2_hmin" value="160"/>
+			<param name="r2_hmax" value="179"/>
+			<param name="r2_smin" value="0"/>
+			<param name="r2_smax" value="63"/>
+			<param name="r2_vmin" value="243"/>
+			<param name="r2_vmax" value="255"/>
+
+			<param name="g_hmin" value="38"/>
+			<param name="g_hmax" value="75"/>
+			<param name="g_smin" value="0"/>
+			<param name="g_smax" value="63"/>
+			<param name="g_vmin" value="243"/>
+			<param name="g_vmax" value="255"/>
+
+			<param name="y2_hmin" value="22"/>
+			<param name="y2_hmax" value="38"/>
+			<param name="y2_smin" value="0"/>
+			<param name="y2_smax" value="63"/>
+			<param name="y2_vmin" value="243"/>
+			<param name="y2_vmax" value="255"/>
     </node>
 
 		<!--
