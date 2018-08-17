@@ -30,12 +30,13 @@
 #define CLOCK_PER_SEC 1000
 
 /////////mission check///////
+bool mission_mode = false;
 bool parking_mode = false, parking_checked = false;
 int parking_reliabilty = 0, go_cnt = 0;
 cv::Point first_point;
 int parking_stage = 0; 
 bool blocking_bar_mode = false, blocking_bar_checked = false;
-int blocking_bar_reliabilty = 0, blocking_bar_stage = 0; 
+int blocking_bar_reliabilty = 0, blocking_bar_stage = 0, blocking_bar_first = 0; 
 bool tunnel_mode = false, tunnel_checked = false;
 int tunnel_reliabilty = 0; 
 bool signal_lamp_mode = false, signal_lamp_checked = false; 
@@ -109,12 +110,18 @@ int empty_cnt = 0; //for detect tunnel
 int pre_left_interval = -2, pre_right_interval = -2;
 int left_interval = -1, right_interval = -1;
 int left_interval_sum = 0, right_interval_sum = 0;
-int pre_right_size = -1, pre_left_size = -1;
+int pre_left_size = -1, pre_right_size = -1;    
+
 std::vector<int> left_interval_vec, right_interval_vec;
 std::vector<int> left_direction_vec, right_direction_vec;
 std::vector<int> left_size_vec, right_size_vec;
-
+std::vector<cv::Point> recently_right_fitting_vec;
+cv::Point cur_right = cv::Point(-1,-1), cur_left = cv::Point(-1,-1);
+cv::Point pre_right = cv::Point(-1,-1), ptr_left = cv::Point(-1,-1);
+int recently_vec_first = -1;
 double left_slope = -999, right_slope = -999;
+double left_roi_slope = -999.9, right_roi_slope = -999.9;
+double pre_left_roi_slope = -999.9, pre_right_roi_slope = -999.9;
 float left_ang_vel, right_ang_vel;
 float x_goal_, y_goal_, prev_y_goal_;
 float left_theta = 0;
@@ -127,7 +134,7 @@ int dynamic_center_x = 0, dynamic_center_y = 0;
 using namespace lane_detect_algo;
 using namespace std;
 
-
+cv::Mat mytest;
 class InitImgObjectforROS {
 
 public:
@@ -158,7 +165,7 @@ public:
         void initMyRESETTrackbar(const string &trackbar_name);
         void setMyHSVTrackbarValue(const string &trackbar_name);
         void setMyRESETTrackbarValue(const string &trackbar_name);
-        void setColorPreocessing(lane_detect_algo::CalLane callane, cv::Mat src, cv::Mat& dst_y, cv::Mat& dst_w, cv::Mat& dst_r, cv::Mat& dst_r2, cv::Mat& dst_g, cv::Mat& dst_y2);
+        void setColorPreocessing(lane_detect_algo::CalLane callane, cv::Mat src, cv::Mat& dst_y, cv::Mat& dst_w, cv::Mat& dst_r, cv::Mat& dst_r2, cv::Mat& dst_g, cv::Mat& dst_y2, cv::Mat& parking_white);
         void setProjection(lane_detect_algo::CalLane callane, cv::Mat src, unsigned int* H_aix_Result_color);
         void restoreImgWithLangeMerge(lane_detect_algo::CalLane callane, cv::Mat origin_size_img, cv::Mat src_y, cv::Mat src_w, cv::Mat& dst);
         void extractLanePoint(cv::Mat origin_src, cv::Mat lane_src);
@@ -175,6 +182,7 @@ public:
         int slopeCheck(cv::Mat &src, std::vector<cv::Point> lane_data, const string &lane_name);
         void calSlope(cv::Mat &src, std::vector<cv::Point> lane_data, const string &lane_name);
         bool detectBlockingBar(cv::Mat src);
+        void setRoi(const string &lane_name, cv::Mat& dst);
 };
 
 
@@ -254,7 +262,7 @@ void InitImgObjectforROS::depthMessageCallback(const sensor_msgs::PointCloud2::C
 void InitImgObjectforROS::imgCb(const sensor_msgs::ImageConstPtr& img_msg){
         cv_bridge::CvImagePtr cv_ptr;
         cv::Mat frame, yellow_hsv, white_hsv, yellow_labeling,white_labeling, laneColor, origin, mergelane, rec_img;
-        cv::Mat red_hsv, red2_hsv, green_hsv, yellow2_hsv;
+        cv::Mat red_hsv, red2_hsv, green_hsv, yellow2_hsv, parking_white;
         std::vector<cv::Point> box_pt_y,box_pt_w;
         std::vector<cv::Point> over_pt_y, over_pt_w;
         
@@ -284,7 +292,7 @@ void InitImgObjectforROS::imgCb(const sensor_msgs::ImageConstPtr& img_msg){
                         cv::Mat gui_test = frame.clone();
                         lane_detect_algo::CalLane callane;
 
-
+                        mytest = frame.clone();
                         
                         ////*Testing histogram*////탑뷰 아니면 쓰기 힘들다..
                         // unsigned int* H_yResultYellow = new unsigned int[frame_width];
@@ -310,14 +318,104 @@ void InitImgObjectforROS::imgCb(const sensor_msgs::ImageConstPtr& img_msg){
                         //컬러영상에 소벨엣지 적용해서 노란색 추출하는방법 생각해보기
                         
                         //setColorPreocessing(callane, sobel_v, yellow_hsv, white_hsv);
-                        setColorPreocessing(callane, frame, yellow_hsv, white_hsv, red_hsv, red2_hsv, green_hsv, yellow2_hsv);
+                        parking_white = frame.clone();
+                        
+                        setColorPreocessing(callane, frame, yellow_hsv, white_hsv, red_hsv, red2_hsv, green_hsv, yellow2_hsv, parking_white);
+                        
+                        
+                        //*********make label
+                        // std::vector<std::vector<cv::Point>> countours;
+                        // std::vector<cv::Vec4i> hierachy;
+                        // cv::findContours(parking_white,countours, hierachy, CV_RETR_LIST, CV_CHAIN_APPROX_SIMPLE, cv::Point(0, 0));
+                        // cv::Mat parking_label = cv::Mat::zeros(parking_white.size(), CV_8UC3);
+                        // for (std::vector<std::vector<cv::Point>>::size_type i = 0; i < countours.size(); ++i) {
+                        //         cv::drawContours(parking_label, countours, i, CV_RGB(255, 255, 255), -1, 8, hierachy, 0, cv::Point());
+                        // }
+                        // cv::cvtColor(parking_label, parking_label, cv::COLOR_BGR2GRAY); // Convert the image to Gray
+                        // cv::threshold(parking_label, parking_label, 127, 255, cv::THRESH_BINARY);
+                        // cv::Mat draw_lable;
+                        // cv::threshold(parking_label, draw_lable, 127, 255, cv::THRESH_BINARY_INV);
+                        // cv::Mat img_labels, stats, centroids;
+                        // int numOfLables = cv::connectedComponentsWithStats(parking_label, img_labels, stats, centroids, 8, CV_32S);
+                        // for (int row = 1; row < numOfLables; row++) {
+                        //         int *data = stats.ptr<int>(row);
+                        //         int area = data[cv::CC_STAT_AREA];
+                        //         int left = data[cv::CC_STAT_LEFT];
+                        //         int top = data[cv::CC_STAT_TOP];
+                        //         int width = data[cv::CC_STAT_WIDTH];
+                        //         int height = data[cv::CC_STAT_HEIGHT];
+                        //         if(area > 100 && area < 300){
+                        //                 cv::rectangle(draw_lable, cv::Point(left, top), cv::Point(left + width, top + height), cv::Scalar(0, 0, 255), 1);
+                        //         }
+                        //         else{
+                        //                 for (int row = top; row < top + height; row++)
+                        //                 {
+                        //                         uchar *data = parking_label.ptr<uchar>(row);
+                        //                         for (int col = left; col < left + width; col++)
+                        //                         { //1ěąëě´ëź (left+width)ě ěąëę° ěęłąí¨
+                        //                                 data[col] = (uchar)0;
+                        //                         }
+                        //                 }
+                        //         }
+                        //         cv::putText(draw_lable, std::to_string(area), cv::Point(left + 20, top + 20),
+                        //                     cv::FONT_HERSHEY_SIMPLEX, 0.3, cv::Scalar(5, 25, 255), 2);
+                        //         cv::imshow("parking_label", draw_lable);
+                        //         cv::imshow("parking delete",parking_label);
+                        // }
+
+                        
                         cv::Mat origin_white_hsv = white_hsv.clone();
+                        cv::Mat park_origin = frame.clone();
+                        // cv::Mat park_origin = frame.clone();
+                        // cv::cvtColor(park_origin,park_origin,CV_BGR2GRAY);   
+                        // cv::Canny(park_origin, park_origin, (park_origin.rows + park_origin.cols) / 4, (park_origin.rows + park_origin.cols) / 2);
+                        // cv::Mat element_park(3,3,CV_8U,cv::Scalar(1)); 
+                        // cv::dilate(park_origin,park_origin,element_park);
+                        // cv::Sobel(park_origin,park_origin,park_origin.depth(),0,1);
+                        // cv::Mat park_zeroo = cv::Mat::zeros(park_origin.size(), CV_8UC1);
+                        // std::vector<cv::Point> park_line_test;
+                        // for (int x = park_origin.cols/2 - 70; x < park_origin.cols/2 + 70; x++)
+                        // {
+                        //         for (int y = 170; y > 130; y--)
+                        //         {
+                        //                 uchar *park_pt = park_origin.ptr<uchar>(y);
+                        //                 uchar *parkline_data = park_zeroo.ptr<uchar>(y);
+                        //                 if (park_pt[x] != (uchar)0)
+                        //                 {
+                        //                         park_line_test.push_back(cv::Point(x, y));
+                        //                         parkline_data[x] = (uchar)255;
+                        //                         break;
+                        //                 }
+                        //         }
+                        // }
+                        // int line_max = -1, line_tmp = 0;
+                        // for(int y = 170; y > 130; y--){
+                        //         for(int i = 0; i<park_line_test.size(); i++){
+                        //                 if(park_line_test[i].y == y){
+                        //                         for(int x = park_origin.cols/2 - 70; x < park_origin.cols/2 + 70; x++){
+                        //                                 if(park_line_test[i].x == x){
+                        //                                         line_tmp++;
+                        //                                 }
+                        //                         }
+                                                
+                        //                 }
+                        //         }
+                        //         if(line_tmp > line_max){
+                        //                 line_max = line_tmp;
+                        //                 line_tmp = 0;
+                        //         }
+                        // }
+                        // std::cout<<"line_tmp : "<<line_tmp<<std::endl;
+                        
+                        // cv::imshow("park_zeroo", park_zeroo);
+
                         cv::Mat origin_yellow_hsv = yellow_hsv.clone();
                         //cv::Mat yellow_sobel;
                         //setMySobelwithROI(frame,0.2,"left",yellow_sobel);
                         cv::Mat yellow_canny = frame.clone();
                         setMyCannywithROI("left",yellow_canny);//인자로 범위 받는걸로 고치기..
                         callane.makeContoursLeftLane(yellow_canny,yellow_canny);
+                        
                         //cv::imshow("canny_test",yellow_canny);
                         
                         //  cv::Mat white_canny = frame.clone();
@@ -325,16 +423,15 @@ void InitImgObjectforROS::imgCb(const sensor_msgs::ImageConstPtr& img_msg){
                         //  callane.makeContoursRightLane(white_canny,white_canny);
                         // cv::imshow("white_canny",white_canny);
                         
-                        if(!blocking_bar_checked){
+                        if(!blocking_bar_checked && !blocking_bar_mode && !parking_mode && !signal_lamp_mode && !tunnel_mode){
                                 blocking_bar_mode = detectBlockingBar(red_hsv);
                                 if(blocking_bar_mode){
                                         normal_mode = false;
-                                        go_cnt = 0;
                                         std::cout<<"#################################### detect blocking bar ##############"<<std::endl;
                                 }
                         }
                         
-
+                        
 
 
                         cv::Mat white_sobel;
@@ -352,7 +449,7 @@ void InitImgObjectforROS::imgCb(const sensor_msgs::ImageConstPtr& img_msg){
                         over_pt_y.push_back(cv::Point(left_roi_b.x - 10, left_roi_t.y));
                         over_pt_y.push_back(cv::Point(left_roi_b.x + 10, left_roi_b.y));
                         yellow_labeling = yellow_canny.clone();
-                        
+                        cv::Mat yellow_roi_origin = yellow_canny.clone();
                         //yellow_labeling = yellow_sobel.clone();
                         int white_valid;
                         box_pt_w.push_back(right_roi_t);
@@ -362,6 +459,19 @@ void InitImgObjectforROS::imgCb(const sensor_msgs::ImageConstPtr& img_msg){
                         cv::Mat element(3,3,CV_8U,cv::Scalar(1)); 
                         cv::dilate(white_hsv,white_hsv,element);
                         cv::medianBlur(white_hsv, white_hsv, 1);
+                        cv::Mat white_roi_origin = white_hsv.clone();
+                        cv::imshow("white_roi_origin",white_roi_origin);
+                        cv::imshow("yellow_roi_origin",yellow_roi_origin);
+                        cv::Mat white_roi = white_roi_origin.clone();
+                        cv::Mat yellow_roi = yellow_roi_origin.clone();
+                        setRoi("left",yellow_roi);
+                        setRoi("right",white_roi);
+                        cv::imshow("yellow_roi",yellow_roi);
+                        cv::imshow("white_roi",white_roi);
+                        cv::dilate(parking_white,parking_white,element);
+                        cv::medianBlur(parking_white, parking_white, 1);
+                        cv::imshow("parking_white",parking_white);
+
                         for(int y = white_hsv.rows-3; y<white_hsv.rows; y++){
                                 uchar* none_roi_data = white_hsv.ptr<uchar>(y);
                                 for(int x = 0; x<white_hsv.cols; x++){
@@ -387,394 +497,247 @@ void InitImgObjectforROS::imgCb(const sensor_msgs::ImageConstPtr& img_msg){
                         //*for inner left lane fitting*//
                         
                         if(setMyLaneFitting(yellow_labeling, box_pt_y, "left", left_lane_fitting)){                  
-                                left_lane_turn = FittedLaneCheck(left_lane_fitting,"left");
-                                if(left_lane_turn != 3){
-                                        leftlane_turn_value_num++;
-                                }
-                                leftlane_turn_value_vec.push_back(left_lane_turn);
+                             
+                                
                         }
                         else{
                                 left_lane_fitting.clear();
                                 left_lane_fitting.resize(0);
-                                yellow_labeling = cv::Mat::zeros(yellow_labeling.size(), CV_8UC3);
+                                yellow_labeling = cv::Mat::zeros(yellow_labeling.size(), CV_8UC1);
                                 if(debug) std::cout<<"invalid left lane"<<std::endl;
                         }
                          //int dot_c = 0;
                         if(white_valid != -1){
                                 //*for inner right lane fitting*// 
-                                if(setMyLaneFitting(white_labeling, box_pt_w, "right", right_lane_fitting)){    
-                                        right_lane_turn = FittedLaneCheck(right_lane_fitting,"right");
-                                        if(right_lane_turn != 3){
-                                                rightlane_turn_value_num++;
-                                        }
-                                        rightlane_turn_value_vec.push_back(right_lane_turn);
+                                if(setMyLaneFitting(white_labeling, box_pt_w, "right", right_lane_fitting)){
+                                        
+                                                for(int i = 0; i<right_lane_fitting.size(); i++){
+                                                        recently_right_fitting_vec.push_back(right_lane_fitting[i]);
+                                                }
+                                     
+                                        
                                 }
-                                //else{  
-                                
-                                //도트는 선 따로 피팅하자~~
-                                // else{
-                                //         right_lane_fitting.clear();
-                                //         right_lane_fitting.resize(0);
-                                //         white_labeling = cv::Mat::zeros(white_labeling.size(), CV_8UC3);  
-                                //         if(debug) std::cout<<"invaild right label"<<std::endl;
-                                // }
-                              //  }
+                                else{
+                                        right_lane_fitting.clear();
+                                        right_lane_fitting.resize(0);
+                                        white_labeling = cv::Mat::zeros(white_labeling.size(), CV_8UC1);
+                                        if(debug) std::cout<<"invalid right lane"<<std::endl;
+                                }
                         }       
                         
-                        //cv::imshow("dot",gui_test);
-                        //이방법이 잘 안되면 hsv and연산 , canny(label) and연산 추가해 비교하기
-                        //오른쪽 차선과 연결된 영역이 왼쪽 차선 영역에 나타나면 오른쪽 차선의 마지막을 시작점으로해 그 윗부분을 날림(색깔 비교안넣고 그냥 날리는 버전)
-                        //왼쪽 차선과 연결된 영역이 오른쪽 차선 영역에 나타나면 위와같이 날림(canny and연산 안하고 그냥 날리는 버전)
                         cv::Mat tt = frame.clone();
-                        if(!right_lane_fitting.empty() && !left_lane_fitting.empty()){
-                                
-                                //left roi에 나타나는 흰색선 제거
-                                int over_w_start_y = right_lane_fitting[right_lane_fitting.size()-1].y, over_w_end_y = 0;
-                                int over_w_start_x = right_lane_fitting[right_lane_fitting.size()-1].x, over_w_end_x = 0;
-                                
-                                //delete left lane that area of white lane
-                                if(abs(over_w_start_x - right_roi_t.x)<15){
-                                        for(int y = over_w_start_y; y>over_w_end_y; y--){
-                                                uchar* delete_data = yellow_labeling.ptr<uchar>(y);
-                                                for(int x = over_w_start_x; x > over_w_end_x; x--){
-                                                        if(delete_data[x] != (uchar)0){
-                                                                delete_data[x] = (uchar)0;
-                                                        }
-                                                }
-                                        }
-                                }
-                                int over_y_start_y = left_lane_fitting[left_lane_fitting.size()-1].y, over_y_end_y = 0;
-                                int over_y_start_x = left_lane_fitting[left_lane_fitting.size()-1].x, over_y_end_x = white_labeling.cols;
-                                //delete left lane that area of white lane
-                                if(abs(over_y_start_x - left_roi_b.x)<15){
-                                        for(uint y = over_y_start_y; y>over_y_end_y; y--){
-                                                uchar* delete_data = white_labeling.ptr<uchar>(y);
-                                                for(uint x = over_y_start_x; x < over_y_end_x; x++){
-                                                        if(delete_data[x] != (uchar)0){
-                                                                delete_data[x] = (uchar)0;
-                                                        }
-                                                }
-                                        }
-                                }
-
-                                left_lane_fitting.clear();
-                                left_lane_fitting.resize(0);
-                                if(setMyLaneFitting(yellow_labeling, box_pt_y, "left", left_lane_fitting)){                  
-                                        FittedLaneCheck(left_lane_fitting,"left");
-                                }
-                                else{
-                                        if(!left_lane_fitting.empty()){
-                                                left_lane_fitting.clear();
-                                                left_lane_fitting.resize(0);
-                                        }
-                                        yellow_labeling = cv::Mat::zeros(yellow_labeling.size(), CV_8UC1);//1채널 이미지다!!!!!!주의하기 CV_8UC1이다!!!
-                                        if(debug) std::cout<<"invalid left lane"<<std::endl;
-                                }
-                                right_lane_fitting.clear();
-                                right_lane_fitting.resize(0);
-                                if(setMyLaneFitting(white_labeling, box_pt_w, "right", right_lane_fitting)){    
-                                        FittedLaneCheck(right_lane_fitting,"right");
-                                }
-                                else{
-                                        if(right_lane_fitting.empty()){
-                                                right_lane_fitting.clear();
-                                                right_lane_fitting.resize(0);
-                                        }
-                                        white_labeling = cv::Mat::zeros(white_labeling.size(), CV_8UC1);  
-                                }
-                                
-                               
-                        }
+                        
                         cv::Mat slope_test = frame.clone();
-                        // if(!left_lane_fitting.empty()){
-                        //         slopeCheck(slope_test,left_lane_fitting,"left");
-                        // }
-                        // if(!right_lane_fitting.empty()){
-                                
-                        //         slopeCheck(slope_test,right_lane_fitting,"right");
-                        // }
-                        // cv::imshow("direction",slope_test);
-
-                       // cv::polylines(gui_test,dot_lane_fitting,0,cv::Scalar(222,232,22),3);
                         
-                        //cv::polylines(gui_test,left_lane_fitting,0,cv::Scalar(20,200,240),2);
-                        //cv::polylines(gui_test,right_lane_fitting,0,cv::Scalar(200,100,23),2);
 
+                        cv::Point left_fit_pt = cv::Point(-1, -1);
                         
-                        cv::Point left_fit_pt = cv::Point(-1,-1);
-                        //if(!left_lane_fitting.empty()){     
-                                if(!left_lane_fitting.empty()){
-                                        if(left_lane_fitting.size() > 10){
-                                                for(int i = 0; i<left_lane_fitting.size(); i++){
-                                                        if(left_lane_fitting[i].y >160 && left_lane_fitting[i].y<170){
-                                                                left_fit_pt = cv::Point(left_lane_fitting[i].x, left_lane_fitting[i].y);
+                        if (!left_lane_fitting.empty())
+                        {
+                                if (left_lane_fitting.size() > 10)
+                                {
+                                        std::vector<cv::Point> left_roi_fitting_vec;
+                                        for (int i = 0; i < left_lane_fitting.size(); i++)
+                                        {
+                                                if (left_lane_fitting[i].y > 160 && left_lane_fitting[i].y < 170)
+                                                {
+                                                        
+                                                        //std::cout<<"\n\n @@@@left_lane start = "<<left_lane_fitting[i].x<<", "<<left_lane_fitting[i].y<<std::endl;
+                                                        left_fit_pt = cv::Point(left_lane_fitting[i].x, left_lane_fitting[i].y);
+                                                        cv::polylines(gui_test,left_lane_fitting,0,cv::Scalar(20,200,240),2);
+                                                        
                                                                 break;
-                                                        }
-                                                }
-                                                int l_sum = 0, l_avg = 0, l_cnt =0;
-                                                for(int i = 0; i<left_lane_fitting.size(); i++){
-                                                        if(left_lane_fitting[i].y >160 && left_lane_fitting[i].y<170){
-                                                               std::cout<<"left_ lane : "<< abs(left_lane_fitting[i].x - center_pt_b.x)<<std::endl;
-                                                               l_sum += abs(left_lane_fitting[i].x - center_pt_b.x);
-                                                               l_cnt++;
-                                                        }
-                                                }
-                                                if(l_cnt != 0){
-                                                        l_avg = l_sum/l_cnt;
-                                                        std::cout<<"l_avg : "<<l_avg<<std::endl;
-                                                }
-                                                if(first_left < -2){
-                                                        first_left++;
-                                                }
-                                                else if(first_left == -2){
-                                                        left_interval = l_avg;//abs(left_fit_pt.x - center_pt_b.x);
-                                                        if(left_interval < 10) left_interval = left_min_interval+1;
-                                                        first_left = left_interval;
-                                                        std::cout<<"####################first left set : "<<first_left<<std::endl;
-                                                }
-                                                left_interval = l_avg;//abs(left_fit_pt.x - center_pt_b.x);
-                                                //calSlope(slope_test,left_lane_fitting,"left");
-                                                // if(msg_count_left < 6){
                                                         
-                                                //         //int left_dir = 0;
-                                                //         //left_dir = slopeCheck(slope_test,left_lane_fitting,"left");
-                                                //         //left_direction_vec.push_back(left_dir);
-                                                //         left_size_vec.push_back(left_lane_fitting.size());
-                                                //         // if(left_dir == -1){
-                                                //         //         left_direction_cnt++;
-                                                //         // } 
-                                                //         //left_direction_vec.push_back(slopeCheck(slope_test,left_lane_fitting,"left"));
-                                                //         if(left_fit_pt.x != -1){
-                                                //                 int edit = 1;
-                                                //                 if(pre_left_interval != -1 && left_interval != -1){
-                                                //                         if(abs(left_interval - abs(left_fit_pt.x - center_pt_b.x)) > 9){
-                                                //                                 left_interval_vec.push_back(abs(left_fit_pt.x - center_pt_b.x));
-                                                //                                 left_interval_sum += abs(left_fit_pt.x - center_pt_b.x);
-                                                //                                 edit = 0;
-                                                //                         }
-                                                //                 }
-                                                //                 if(edit==1){
-                                                //                         left_interval_vec.push_back(abs(left_fit_pt.x - center_pt_b.x));
-                                                //                         left_interval_sum += abs(left_fit_pt.x - center_pt_b.x);
-                                                //                 }
-                                                //                 // left_interval_vec.push_back(abs(center_pt_b.x - left_fit_pt.x));
-                                                //                 // left_interval_sum += abs(center_pt_b.x - left_fit_pt.x);  
-                                                //         }
-                                                //         else{
-                                                //                 int tmp = -1;//left_min_interval +1;
-                                                //                 left_interval_vec.push_back(tmp);
-                                                //                 left_interval_sum += abs(tmp);
-                                                //         }
-                                                // }
-                                                // else{
-                                                //         int left_interval_avg = left_interval_sum/left_interval_vec.size();
-                                                //         std::vector<int> avg_diff_vec;
-                                                //         for(uint j = 0; j<left_interval_vec.size(); j++){
-                                                //                 avg_diff_vec.push_back(abs(left_interval_vec[j]-left_interval_avg));
-                                                //         }
-                                                //         int max_diff = -9999;
-                                                //         for(uint j = 0; j<avg_diff_vec.size(); j++){
-                                                //                 if(avg_diff_vec[j] > max_diff){
-                                                //                         max_diff = avg_diff_vec[j];
-                                                //                 }
-                                                //         }
-                                                //         left_interval_sum = 0;
-                                                //         int bigger_diff_sum = 0, lower_diff_sum = 0;
-                                                //         int error_diff = 0, bigger_cnt = 0, lower_cnt = 0;
-                                                //         for(uint j = 0; j<avg_diff_vec.size(); j++){
-                                                //                 // if(abs(avg_diff_vec[j] - max_diff) < 10){
-                                                //                 //         left_interval_sum += left_interval_vec[j];
-                                                //                 //         sum_cnt++;
-                                                //                 // }
-                                                               
-                                                //                 if(abs(avg_diff_vec[j] - max_diff) < 10){
-                                                //                         bigger_diff_sum += left_interval_vec[j];
-                                                //                         error_diff++;
-                                                //                         bigger_cnt++;
-                                                //                 }
-                                                //                 else{
-                                                //                         lower_diff_sum += left_interval_vec[j];
-                                                //                         lower_cnt++;
-                                                //                 }
-                                                //         }
-                                                //         if((uint)error_diff >= avg_diff_vec.size()/2){
-                                                //                 if(bigger_cnt != 0) left_interval = bigger_diff_sum/bigger_cnt;
-                                                //         }
-                                                //         else{
-                                                //                 if(lower_cnt != 0) left_interval = lower_diff_sum/lower_cnt;
-                                                //         }
                                                         
-                                                // }
-                                               // msg_count_left++;
-                                        }
-                                        else{
-                                                left_interval = -1;
-                                               // msg_count_left = 0;
-                                               // left_interval_vec.clear();
-                                               // left_interval_vec.resize(0);
+                                                }
                                         }
                                         
-                                }
-                                else{
-                                        left_interval = -1;
-                                }
-                        //}
-                        
-                        cv::Point right_fit_pt = cv::Point(-1,-1);
-                        //if(!right_lane_fitting.empty()){
-                                if(!right_lane_fitting.empty()){
-                                       
-                                        if(right_lane_fitting.size()>10){//사실 set lane fitting에서 이미 걸러져 나온 결과임 (20이상으로 걸러져나몽ㅁ)
-                                               // calSlope(slope_test,right_lane_fitting,"right");
-                                                for(int i = 0; i<right_lane_fitting.size(); i++){
-                                                                if(right_lane_fitting[i].y >170 && right_lane_fitting[i].y<180){
-                                                                        right_fit_pt = cv::Point(right_lane_fitting[i].x, right_lane_fitting[i].y);
-                                                                        break;
-                                                                }
+                                        int l_sum = 0, l_avg = 0, l_cnt = 0;
+                                        int left_pt_sum = 0, left_pt_avg = 0, left_pt_cnt = 0;
+                                        for (int i = 0; i < left_lane_fitting.size(); i++)
+                                        {
+                                                if (left_lane_fitting[i].y > 160 && left_lane_fitting[i].y < 170)
+                                                {
+                                                        left_pt_sum += left_lane_fitting[i].x;
+                                                        left_pt_cnt++;
+                                                        // std::cout << "left before : " << left_lane_fitting[i].x  << std::endl;
+                                                        l_sum += abs(left_lane_fitting[i].x - center_pt_b.x);
+                                                        l_cnt++;
                                                 }
-                                                int r_sum = 0, r_avg = 0, r_cnt =0;
-                                                for(int i = 0; i<right_lane_fitting.size(); i++){
-                                                        if(right_lane_fitting[i].y >170 && right_lane_fitting[i].y<180){
-                                                               std::cout<<"right_ lane : "<<abs(right_fit_pt.x - center_pt_b.x)<<std::endl;
-                                                               r_sum += abs(right_fit_pt.x - center_pt_b.x);
-                                                               r_cnt++;
-                                                        }
-                                                }
-                                                if(r_cnt != 0){
-                                                        r_avg = r_sum/r_cnt;
-                                                        std::cout<<"r_avg : "<<r_avg<<std::endl;
-                                                }
-                                                if(first_right < -2){
-                                                        first_right++;
-                                                }
-                                                else if(first_right == -2){
-                                                        right_interval = r_avg;//abs(right_fit_pt.x - center_pt_b.x);
-                                                        first_right = right_interval;
-                                                        if(right_interval <10) right_interval = right_min_interval+1;
-                                                        std::cout<<"####################first right set : "<<first_right<<std::endl;
-                                                }
-                                                right_interval = r_avg;//abs(right_fit_pt.x - center_pt_b.x);
-                                                // int right_dir = 0;
-                                                // right_dir = slopeCheck(slope_test,right_lane_fitting,"right");
-                                                // if(right_dir == -1){
 
-                                                //         right_direction_cnt++;
-                                                // }
-                                                //int right_dir = 0;
-                                                //right_dir = slopeCheck(slope_test,right_lane_fitting,"right");
-                                                //right_direction_vec.push_back(right_dir);
-                                                //right_size_vec.push_back(right_lane_fitting.size()); 
-                                                // if(msg_count_right < 6){
-                                                //         if(right_fit_pt.x != -1){
-                                                //                 int edit = 1;
-                                                //                 if(pre_right_interval != -1 && right_interval != -1){
-                                                //                         if(abs(right_interval - abs(right_fit_pt.x - center_pt_b.x)) > 9){
-                                                //                                 right_interval_vec.push_back(abs(right_fit_pt.x - center_pt_b.x));
-                                                //                                 right_interval_sum += abs(right_fit_pt.x - center_pt_b.x);
-                                                //                                 edit = 0;
-                                                //                         }
-                                                //                 }
-                                                //                 if(edit==1){
-                                                //                         right_interval_vec.push_back(abs(right_fit_pt.x - center_pt_b.x));
-                                                //                         right_interval_sum += abs(right_fit_pt.x - center_pt_b.x);
-                                                //                 }
-                                                //         }
-                                                //         else{
-                                                //                 int tmp = -1;//right_min_interval + 1;
-                                                //                 right_interval_vec.push_back(tmp);
-                                                //                 right_interval_sum += tmp;
-                                                //         }                                                
-                                                         
-                                                        
-                                                // }
-                                                // else{
-                                                //         int right_interval_avg = right_interval_sum/right_interval_vec.size();
-                                                //         std::vector<int> avg_diff_vec;
-                                                //         for(uint j = 0; j<right_interval_vec.size(); j++){
-                                                //                  avg_diff_vec.push_back(abs(right_interval_vec[j]-right_interval_avg));
-                                                //         }
-                                                //         int max_diff = -9999;
-                                                //         for(uint j = 0; j<avg_diff_vec.size(); j++){
-                                                //                 if(avg_diff_vec[j] > max_diff){
-                                                //                          max_diff = avg_diff_vec[j];
-                                                //                 }
-                                                //         }
-                                                //         right_interval_sum = 0;
-                                                //         int bigger_diff_sum = 0, lower_diff_sum = 0;
-                                                //         int error_diff = 0, bigger_cnt = 0, lower_cnt = 0;
-                                                //         for(uint j = 0; j<avg_diff_vec.size(); j++){
-                                                //                 if(abs(avg_diff_vec[j] - max_diff) < 10){
-                                                //                         bigger_diff_sum += right_interval_vec[j];  
-                                                //                         error_diff++;
-                                                //                         bigger_cnt++;
-                                                //                 }
-                                                //                 else{
-                                                //                         lower_diff_sum += right_interval_vec[j];
-                                                //                         lower_cnt++;
-                                                //                 }
-                                                //         }   
-                                                //         if((uint)error_diff >= avg_diff_vec.size()/2){
-                                                //                 if(bigger_cnt != 0) right_interval = bigger_diff_sum/bigger_cnt;
-                                                //         }
-                                                //         else{
-                                                //                 if(lower_cnt != 0) right_interval = lower_diff_sum/lower_cnt;
-                                                //         }
-                                                // }
-                                              //  msg_count_right++;
                                         }
-                                        else{
-                                                right_interval = -1;
-                                                // msg_count_right = 0;
-                                                // right_interval_vec.clear();
-                                               // right_interval_vec.resize(0);
+                                        if(left_pt_cnt!= 0){
+                                                left_pt_avg = left_pt_sum/left_pt_cnt;
                                         }
-                                }
-                                else{
-                                        right_interval = -1;
-                                }
-                       // }
-                        if(!left_lane_fitting.empty() && !right_lane_fitting.empty()){
-                                first_width = first_left + first_right;
-                                // left_direction_vec.push_back(slopeCheck(slope_test,left_lane_fitting,"left"));
-                                // right_direction_vec.push_back(slopeCheck(slope_test,right_lane_fitting,"right"));
-                                // if(left_direction_vec.size()>4 && right_direction_vec.size()>4){
-                                //         int sum = 0;
-                                //         for(int i = 0; i<4; i++){
-                                //                 sum += left_direction_vec[i] + right_direction_vec[i];
-                                //         }
-                                //         if(sum == 0){
-                                //                 left_interval = left_min_interval + 1;
-                                //                 right_interval = right_min_interval + 1;
-                                //         }       
-                                // }
-                                // left_direction_vec.clear();
-                                // left_direction_vec.resize(0);
-                                // right_direction_vec.clear();
-                                // right_direction_vec.resize(0);
-                        }
-                        if(!parking_checked){
-                                std::vector<cv::Point> dot_test_box_pt_w;
-                                dot_test_box_pt_w.push_back(cv::Point(right_roi_t.x-50,right_roi_t.y));
-                                dot_test_box_pt_w.push_back(right_roi_b);
-                                
-                                if(setMyLaneFitting(white_hsv,dot_test_box_pt_w, "dot_test", dot_lane_fitting)){
                                         
-                                        if(dot_cnt != -1){
-                                                dot_cnt++;
-                                                std::cout<<"###################################################################### dot"<<std::endl;
+                                        for(int i = 0; i<left_lane_fitting.size(); i++){
+                                                if (left_lane_fitting[i].y > 160 && left_lane_fitting[i].y < 170)
+                                                {
+                                                        if(left_lane_fitting[i].x < left_pt_avg){
+                                                                left_roi_fitting_vec.push_back(left_lane_fitting[i]);
+                                                               // std::cout << "left before : " << left_lane_fitting[i].x  << std::endl;
+                                                        }
+                                                        else{
+                                                              //  std::cout << "left before error: " << left_lane_fitting[i].x  << std::endl;
+                                                        }
+                                                }
                                         }
-                                        if(dot_cnt > 3){ 
+                                        if(!left_roi_fitting_vec.empty() && left_roi_fitting_vec[0].x != 0){
+                                                left_roi_slope = ((double)(left_roi_fitting_vec[left_roi_fitting_vec.size()-1].y - left_roi_fitting_vec[0].y)/
+                                                   (double)(left_roi_fitting_vec[left_roi_fitting_vec.size()-1].x - left_roi_fitting_vec[0].x));
+                                                if(isnan(left_roi_slope) || left_roi_slope < -1) left_roi_slope = -1.1;
+                                                else if(left_roi_slope > 1) left_roi_slope = 1.1;
+
+                                                // std::cout<<"left slope  : "
+                                                // <<left_roi_slope
+                                                // << std::endl;
+                                                // if(left_roi_slope > 0){
+                                                //         cv::putText(gui_test, std::to_string(pre_left_roi_slope), cv::Point(100,50), 
+                                                // cv::FONT_HERSHEY_SIMPLEX, 0.3, cv::Scalar(5,25,255), 1);
+                                                // cv::putText(gui_test, std::to_string(left_roi_slope), left_roi_fitting_vec[0], 
+                                                // cv::FONT_HERSHEY_SIMPLEX, 0.3, cv::Scalar(5,25,255), 2);
+                                                // }
+                                                
+                                        }
+                                        
+                                        
+                                        if (l_cnt != 0)
+                                        {
+                                                l_avg = l_sum / l_cnt;
+                                                //std::cout << "l_avg : " << l_avg << std::endl;
+                                        }
+                                        left_interval = l_avg; //abs(left_fit_pt.x - center_pt_b.x);
+                                        if (left_interval < 10){
+                                                left_interval = -1; //left_min_interval + 1;
+                                                left_interval_vec.clear();
+                                                left_interval_vec.resize(0);
+                                        }
+                                }
+                                else
+                                {
+                                        left_interval = -1;
+                                        left_interval_vec.clear();
+                                        left_interval_vec.resize(0);
+                                }
+                        }
+                        else
+                        {
+                                left_interval = -1;
+                        }
+                       // cv::imshow("left slope",gui_test);
+                        cv::Point right_fit_pt = cv::Point(-1, -1);
+                        if (!right_lane_fitting.empty())
+                        {
+                                 if (right_lane_fitting.size() > 10)
+                                { //사실 set lane fitting에서 이미 걸러져 나온 결과임 (20이상으로 걸러져나몽ㅁ)
+                                        std::vector<cv::Point> right_roi_fitting_vec;
+                                        for (int i = 0; i < right_lane_fitting.size(); i++)
+                                        {
+                                                
+                                                //cv::polylines(gui_test,right_lane_fitting,0,cv::Scalar(200,100,23),2);
+                                                if (right_lane_fitting[i].y >= 170 && right_lane_fitting[i].y <= 180)
+                                                {
+                                                        //cur_right = right_lane_fitting[i];
+                                                       // std::cout<<"\n\n @@@@right_lane start = "<<right_lane_fitting[i].x<<", "<<right_lane_fitting[i].y<<std::endl;
+                                                        right_fit_pt = cv::Point(right_lane_fitting[i].x, right_lane_fitting[i].y);
+                                                        break;
+                                                }
+                                        }
+                                        int r_sum = 0, r_avg = 0, r_cnt = 0;
+                                        int right_pt_sum = 0, right_pt_avg = 0, right_pt_cnt = 0;
+                                        for (int i = 0; i < right_lane_fitting.size(); i++)
+                                        {
+                                                if (right_lane_fitting[i].y >= 170 && right_lane_fitting[i].y <= 180)
+                                                {
+                                                        right_pt_sum += right_lane_fitting[i].x;
+                                                        right_pt_cnt++;
+                                                        recently_right_fitting_vec.push_back(right_lane_fitting[i]);
+                                                      //  std::cout << "right_ lane : " << abs(right_fit_pt.x - center_pt_b.x) << std::endl;
+                                                        r_sum += abs(right_fit_pt.x - center_pt_b.x);
+                                                        r_cnt++;
+                                                }
+                                        }
+                                        if(right_pt_cnt != 0){
+                                                right_pt_avg = right_pt_sum/right_pt_cnt;
+                                        }
+                                        for(int i = 0; i<right_lane_fitting.size(); i++){
+                                                if(right_lane_fitting[i].y >= 170 && right_lane_fitting[i].y <= 180){
+                                                        if(right_lane_fitting[i].x < right_pt_avg){
+                                                                right_roi_fitting_vec.push_back(right_lane_fitting[i]);
+                                
+                                                        }
+                                                        
+                                                }
+                                        }
+                                        if(!right_roi_fitting_vec.empty() && right_roi_fitting_vec[0].x != 0){
+                                                right_roi_slope = ((double)(right_roi_fitting_vec[right_roi_fitting_vec.size()-1].y - right_roi_fitting_vec[0].y)/
+                                                   (double)(right_roi_fitting_vec[right_roi_fitting_vec.size()-1].x - right_roi_fitting_vec[0].x));
+                                                if(isnan(right_roi_slope) || right_roi_slope > 1) right_roi_slope = 1.1;
+                                                else if(right_roi_slope < -1) right_roi_slope = -1.1;
+                                                // std::cout<<"right slope  : "
+                                                // <<right_roi_slope
+                                                // << std::endl;
+                                        }
+                                        if (r_cnt != 0)
+                                        {
+                                                r_avg = r_sum / r_cnt;
+                                             //   std::cout << "r_avg : " << r_avg << std::endl;
+                                        }
+                                        right_interval = r_avg; //abs(right_fit_pt.x - center_pt_b.x);
+                                        if (right_interval < 10)
+                                        {
+                                                right_interval = -1; //right_min_interval + 1;
+                                                right_interval_vec.clear();
+                                                right_interval_vec.resize(0);
+                                        }
+                                }
+                                else
+                                {
+                                        right_interval = -1;
+                                        right_interval_vec.clear();
+                                        right_interval_vec.resize(0);
+                                }
+                        }
+                        else
+                        {
+                                right_interval = -1;
+                        }
+                      //  cv::imshow("gui_test_right_line",gui_test);
+                        if (!parking_checked && !blocking_bar_mode && !parking_mode && !signal_lamp_mode && !tunnel_mode)
+                        {
+                                std::vector<cv::Point> dot_test_box_pt_w;
+                                dot_test_box_pt_w.push_back(cv::Point(0, 0));
+                                dot_test_box_pt_w.push_back(cv::Point(215,parking_white.rows-1));
+                                        // for(int y = 0; y < parking_white.cols; y++){
+                                        //                 uchar* delete_data = parking_white.ptr<uchar>(y);
+                                        //                 for(int x = 215; x < parking_white.cols; x++){
+                                        //                         if(delete_data[x] != (uchar)0){
+                                        //                                 delete_data[x] = (uchar)0;
+                                        //                         }
+                                        //                 }
+                                        //         }
+                                        //         cv::imshow("delete `~~~~~~~`",parking_white);
+                                if (setMyLaneFitting(parking_white, dot_test_box_pt_w, "dot_test", dot_lane_fitting))
+                                {
+
+                                        if (dot_cnt != -1)
+                                        {
+                                                dot_cnt++;
+                                                std::cout << "###################################################################### dot" << std::endl;
+                                        }
+                                        if (dot_cnt > 2)
+                                        {
                                                 dot_cnt = -1;
                                                 parking_mode = true;
                                                 normal_mode = false;
                                         }
-                                        cv::polylines(gui_test,dot_lane_fitting,0,cv::Scalar(222,232,22),3);    
+                                        cv::polylines(gui_test, dot_lane_fitting, 0, cv::Scalar(222, 232, 22), 3);
                                 }
-                                else{
-                                        //if(dot_cnt != -1) dot_cnt = 0;
+                                else
+                                {
+                                        if(dot_cnt != -1) dot_cnt = 0;
                                 }
                         }
-                        
                         ///////**param goal test/////
                         // bool param_state;
                         // nh.setParam("/control/wait",true);
@@ -782,457 +745,547 @@ void InitImgObjectforROS::imgCb(const sensor_msgs::ImageConstPtr& img_msg){
                         // setPixelGoal(test,test_num);
                         
                         //left와 right인터벌을 뽑아내는 벡터 위치를 보정할지 말지 결정하자.
-                        if(normal_mode && !curve_mode){
+                        if(normal_mode){
                                 x_goal_ = 0.08;
                                 y_goal_ = 0.0;
+                                double tmp = 0.0;
+                                if (pre_left_roi_slope != -999.9)
+                                {
+                                        if ((pre_left_roi_slope < 0 && left_roi_slope > 0) || (pre_left_roi_slope > 0 && left_roi_slope < 0))
+                                        {
+                                                if (left_roi_slope > pre_left_roi_slope)
+                                                {
+                                                        tmp = left_roi_slope - pre_left_roi_slope;
+                                                }
+                                                else
+                                                {
+                                                        tmp = pre_left_roi_slope - left_roi_slope;
+                                                }
+                                                if (tmp > 0.4)
+                                                {
+                                                        left_roi_slope = pre_left_roi_slope;
+                                                }
+                                        }
+                                }
+
+                                tmp = 0.0;
+                                if (pre_right_roi_slope != -999.9)
+                                {
+                                        if ((pre_right_roi_slope < 0 && right_roi_slope > 0) || (pre_right_roi_slope > 0 && right_roi_slope < 0))
+                                        {
+                                                if (right_roi_slope > pre_right_roi_slope)
+                                                {
+                                                        tmp = right_roi_slope - pre_right_roi_slope;
+                                                }
+                                                else
+                                                {
+                                                        tmp = pre_right_roi_slope - right_roi_slope;
+                                                }
+                                                if (tmp > 0.4)
+                                                {
+                                                        right_roi_slope = pre_right_roi_slope;
+                                                }
+                                        }
+                                }
+
+                                std::cout<<"************************************************************************"<<std::endl;
                                 std::cout<<"    right_lane_size : "<<right_lane_fitting.size()<<std::endl;
                                 std::cout<<"    left_lane_size : "<<left_lane_fitting.size()<<std::endl;
-                               // if(msg_count_left >= 7 ||  msg_count_right >= 7){
+
+                                if (left_interval != -1 && right_interval != -1)
+                                {
                                         
-                                        if(pre_left_interval != -1 && left_interval != -1){
-                                               // if(abs(pre_left_interval - left_interval) > 20) left_interval = -1;//left_min_interval + 1;
+                                        std::cout<<"case 1 : 'all intervals are not -1'\n pre left roi slope : "<<pre_left_roi_slope <<", left slope : "<<left_roi_slope
+                                        <<",\n pre right roi slope : "<<pre_right_roi_slope <<", right slope : "<<right_roi_slope<<std::endl;
+                                        if ((left_interval > left_min_interval && left_interval < left_max_interval))
+                                        { //go straight condition
+                                                y_goal_ += 0;
                                         }
-                                        if(pre_right_interval != -1 && right_interval != -1){
-                                                //if(abs(pre_right_interval - right_interval) > 20) right_interval = -1;//right_min_interval;
+                                        else
+                                        { //** left lane tracking condition
+                                                if (left_interval <= left_min_interval)
+                                                { //need right rotation(ang_vel<0 : right rotation)
+                                                        if (abs(left_interval - left_min_interval) < 10)
+                                                                y_goal_ = -0.05;
+                                                        else if (abs(left_interval - left_min_interval) >= 10 && abs(left_interval - left_min_interval) < 20)
+                                                                y_goal_ = -0.1;
+                                                        else
+                                                                y_goal_ = -0.15;
+                                                }
+                                                else
+                                                { //need left rotation(ang_vel>0 : left rotation)
+                                                        if (abs(left_interval - left_max_interval) < 10)
+                                                                y_goal_ = 0.05;
+                                                        else if (abs(left_interval - left_max_interval) >= 10 && abs(left_interval - left_max_interval) < 20)
+                                                                y_goal_ = 0.1;
+                                                        else
+                                                                y_goal_ = 0.15;
+                                                }
                                         }
-                                        
-                                        if(!left_lane_fitting.empty() && !right_lane_fitting.empty()){//tracking left lane(yellow lane)
-                                                // if(abs(abs(left_interval + right_interval) - first_width) > 45){
-                                                //         if(left_interval > 100 && right_interval > 100){
-                                                //                 if(pre_left_interval > pre_right_interval) right_interval = -1;
-                                                //                 else left_interval = -1;
-                                                //         }
-                                                        
-                                                // }
-                                                int left_size = left_lane_fitting.size(), right_size = right_lane_fitting.size();
-                                                // int left_size_sum = 0, right_size_sum = 0;
-                                                // if(!left_size_vec.empty() && !right_size_vec.empty()){
-                                                //         for(int i = 0; i<left_size_vec.size(); i++){
-                                                //                 left_size_sum += left_size_vec[i];
-                                                //         }
-                                                //         left_size = left_size_sum/left_size_vec.size();
-                                                //         for(int i = 0; i<right_size_vec.size(); i++){
-                                                //                 right_size_sum += right_size_vec[i];
-                                                //         }
-                                                //         right_size = right_size_sum/right_size_vec.size();
-                                                // }
-                                                
-                                                // if(left_size < 65 && right_size < 65 && left_interval != -1 && right_interval != -1){
-                                                //         if(left_size > right_size){
-                                                //                 y_goal_ = -0.23; 
-                                                //         }    
-                                                //         else{
-                                                //                 y_goal_ = 0.23;
-                                                //         }
-                                                // }
-                                                //x 0으로 주는거 해보기
-                                                if(left_size > right_size){
-                                                       // if(msg_count_left >= 7){// && my_dir == -1){
-                                                                if((left_interval > left_min_interval && left_interval < left_max_interval) || left_interval == -1){//go straight condition
-                                                                        y_goal_ += 0;        
-                                                                }
-                                                                else{        //** left lane tracking condition
-                                                                     //   x_goal_ = 0;
-                                                                        if(left_interval <= left_min_interval){//need right rotation(ang_vel<0 : right rotation)
-                                                                                if(abs(left_interval - left_min_interval) < 10) y_goal_ = -0.05;
-                                                                                else if(abs(left_interval - left_min_interval) >= 10 && abs(left_interval - left_min_interval) < 20) y_goal_ = -0.1;
-                                                                                else y_goal_ = -0.15;        
-                                                                        }
-                                                                        else{//need left rotation(ang_vel>0 : left rotation)
-                                                                                if(abs(left_interval - left_max_interval) < 10) y_goal_ = 0.05;
-                                                                                else if(abs(left_interval - left_max_interval) >= 10 && abs(left_interval - left_max_interval) < 20) y_goal_= 0.1;
-                                                                                else y_goal_ = 0.15;
-                                                                        }
-                                                                }
-                                                      //  }
+
+                                        // if(msg_count_right >= 7){// && my_dir == 1){
+                                        if ((right_interval > right_min_interval && right_interval < right_max_interval))
+                                        { //go straight condition
+                                                y_goal_ += (float)0.0;
+                                        }
+                                        else
+                                        {
+                                                //** right lane tracking condition
+                                                if (right_interval <= right_min_interval)
+                                                { //need left rotation(ang_vel>0 : left rotation)
+                                                        if (abs(right_interval - right_min_interval) < 10)
+                                                                y_goal_ += (float)0.05;
+                                                        else if (abs(right_interval - right_min_interval) >= 10 && abs(right_interval - right_min_interval) < 20)
+                                                                y_goal_ += (float)0.1;
+                                                        else
+                                                                y_goal_ += (float)0.15;
+                                                }
+                                                else
+                                                { //need right rotation(ang_vel<0 : right rotation)
+                                                        if (abs(right_interval - right_max_interval) < 10)
+                                                                y_goal_ += (float)-0.05;
+                                                        else if (abs(right_interval - right_max_interval) >= 10 && abs(right_interval - right_max_interval) < 20)
+                                                                y_goal_ += (float)-0.1;
+                                                        else
+                                                                y_goal_ += (float)-0.15;
+                                                }
+                                        }
+
+                                        if(left_roi_slope < 0 && right_roi_slope > 0){
+                                                if(abs(left_roi_slope + right_roi_slope) < 0.3){
+                                                        if(y_goal_ != 0) y_goal_ = 0;
                                                 }
                                                 else{
-                                                       // if(msg_count_right >= 7){// && my_dir == 1){
-                                                                if((right_interval > right_min_interval && right_interval < right_max_interval) || right_interval == -1){//go straight condition
-                                                                        y_goal_ += (float)0.0;        
-                                                                }
-                                                                else{
-                                                                        //** right lane tracking condition
-                                                                      //  x_goal_ = 0;
-                                                                        if(right_interval <= right_min_interval){//need left rotation(ang_vel>0 : left rotation)
-                                                                                if(abs(right_interval - right_min_interval) < 10) y_goal_ += (float)0.05;
-                                                                                else if(abs(left_interval - left_min_interval) >= 10 && abs(left_interval - left_min_interval) < 20) y_goal_ += (float)0.1;
-                                                                                else y_goal_ += (float)0.15;
-                                                                        }
-                                                                        else{//need right rotation(ang_vel<0 : right rotation)
-                                                                                if(abs(right_interval - right_max_interval) < 10) y_goal_ += (float)-0.05;
-                                                                                else if(abs(left_interval - left_max_interval) >= 10 && abs(left_interval - left_max_interval) < 20) y_goal_ += (float)-0.1;
-                                                                                else y_goal_ += (float)-0.15;
-                                                                        }
-                                                                }     
-                                                       // }
+                                                        if(left_roi_slope <= -1 && right_roi_slope < 0.4){
+                                                                if(y_goal_<0) y_goal_ = 0.23;
+                                                        }
+                                                   
+                                                }
+                                        }
+                                        else if(left_roi_slope>0 && right_roi_slope>0){
+                                                if(y_goal_ < 0.24) y_goal_ = 0.24;
+                                        }
+                                        else if(left_roi_slope<0 && right_roi_slope<0){
+                                                if(y_goal_ > -0.24) y_goal_ = -0.24;
+                                        }
+                                        else if(left_roi_slope > 0 && right_roi_slope < 0){
+                                                //hmm...
+                                        }
+
+                                }
+                                else if(left_interval != -1 && right_interval == -1){
+                                        std::cout<<"case 2 : 'only left interval is not -1'\n pre left roi slope : "<<pre_left_roi_slope <<", left slope : "<<left_roi_slope
+                                        <<",\n pre right roi slope : "<<pre_right_roi_slope <<", right slope : "<<right_roi_slope<<std::endl;
+                                        if((left_interval > left_min_interval && left_interval < left_max_interval)){//go straight condition
+                                                y_goal_ = 0;        
+                                        }
+                                        else{
+                                                //** left lane tracking condition
+                                                if(left_interval <= left_min_interval){//need right rotation(ang_vel<0 : right rotation)
+                                                        if(abs(left_interval - left_min_interval) <= 10) y_goal_ = -0.13;
+                                                        else if(abs(left_interval - left_min_interval) >= 10 && abs(left_interval - left_min_interval) < 20) y_goal_ = -0.2;
+                                                        else y_goal_ = -0.24;        
+                                                }
+                                                else{//need left rotation(ang_vel>0 : left rotation)
+                                                        if(abs(left_interval - left_max_interval) <= 10) y_goal_ = 0.13;
+                                                        else if(abs(left_interval - left_max_interval) >= 10 && abs(left_interval - left_max_interval) < 20) y_goal_ = 0.2;
+                                                        else y_goal_ = 0.24;
+                                                }
+                                        }
+                                        int left_size = left_lane_fitting.size();
+                                        if(left_interval < 40){//|| left_size < 40){
+                                           //     x_goal_ = 0;
+                                                y_goal_ = -0.24;
+                                        }
+                                        
+                                        if(left_roi_slope < 0 && right_roi_slope > 0){
+                                                if(abs(left_roi_slope + right_roi_slope) < 0.3){
+                                                        if(y_goal_ != 0) y_goal_ = 0;
+                                                }
+                                                else{
+                                                        //if(right_roi_slope >= 1){
+                                                        if(abs(left_interval - pre_left_interval) > 20 && abs(right_interval - pre_right_interval)>20){
+                                                                if(y_goal_<0) y_goal_ = 0.23;
+                                                        }
+                                                                
+                                                        //}   
+                                                }
+                                                // if(pre_left_roi_slope > 0 && pre_right_roi_slope > 0) y_goal_ = 0.24;
+                                                // else{
+                                                //         y_goal_ = prev_y_goal_; //left..right..?
+                                                // }
+                                                
+                                        }
+                                        else if(left_roi_slope>0 && right_roi_slope>0){
+                                                if(y_goal_ < 0.24) y_goal_ = 0.24;
+                                        }
+                                        else if(left_roi_slope<0 && right_roi_slope<0){
+                                                if(abs(left_lane_fitting.size() - pre_left_size) > 40){
+                                                        if(right_slope > 0) y_goal_ = 0.2;
+                                                }
+                                                else{
+                                                        if(left_interval < left_max_interval && left_interval > left_min_interval) y_goal_ = 0;
+                                                        else{
+                                                                if(y_goal_ > -0.24) y_goal_ = -0.14;
+                                                        }
+                                                        
                                                 }
                                                 
-                                                
-                                                if(left_interval == -1 && right_interval == -1){
+                                        }
+                                        else if(left_roi_slope > 0 && right_roi_slope < 0){
+                                              //  if(y_goal_ < 0.24) y_goal_ = 0.24;//?//....     
+                                        }
+                                        if(pre_right_interval != -1 && right_interval == -1){
+                                                if(pre_left_interval == -1 && left_interval != -1){
                                                         y_goal_ = prev_y_goal_;
                                                 }
-                                                
-
                                         }
-                                        else if(!right_lane_fitting.empty() && left_lane_fitting.empty()){//tracking right lane(white lane)
-                                                
-                                                //if(msg_count_right >= 7){
-                                                        // int right_size = -1;
-                                                        // int right_size_sum = 0;
-                                                        // if(!right_size_vec.empty()){
-                                                                
-                                                        //         for(int i = 0; i<right_size_vec.size(); i++){
-                                                        //                 right_size_sum += right_size_vec[i];
-                                                        //         }
-                                                        //         right_size = right_size_sum/right_size_vec.size();
-                                                                
-                                                        // }
-                                                        // if(pre_right_interval != -1 && right_size > 70){
-                                                        //        // if(abs(pre_right_interval - right_interval) > 15) right_interval = -1;//right_min_interval +1;
-                                                        // }
-                                                        
-                                                        if((right_interval > right_min_interval && right_interval < right_max_interval) || right_interval == -1){//go straight condition
-                                                                y_goal_ = 0;        
-                                                        }
-                                                        else{
-                                                                //** right lane tracking condition
-                                                               // x_goal_ = 0;
-                                                                if(right_interval <= right_min_interval){//need left rotation(ang_vel>0 : left rotation)
-                                                                        if(abs(right_interval - right_min_interval) <= 10) y_goal_ = 0.13;
-                                                                        else if(abs(right_interval - right_min_interval) > 10 && abs(right_interval - right_min_interval) <= 20) y_goal_ = 0.16;
-                                                                        else y_goal_ = 0.26;
-                                                                }
-                                                                else{//need right rotation(ang_vel<0 : right rotation)
-                                                                        if(abs(right_interval - right_max_interval) <= 10) y_goal_ = -0.13;
-                                                                        else if(abs(right_interval - right_max_interval) > 10 && abs(right_interval - right_max_interval) <= 20) y_goal_ = -0.2;
-                                                                        else y_goal_ = -0.26;
-                                                                
-                                                                }
-                                                        }
-                                                        // int right_size = -1;
-                                                        //     int right_size_sum = 0;
-                                                        // if(!right_size_vec.empty()){
-                                                            
-                                                        //     for(int i = 0; i<right_size_vec.size(); i++){
-                                                        //             right_size_sum += right_size_vec[i];
-                                                        //     }
-                                                        //     right_size = right_size_sum/right_size_vec.size();
-                                                        //         // if( right_size > 65 && right_size <= 80  && right_interval > right_min_interval && right_interval < right_max_interval){
-                                                        //         //     //    y_goal_ = 0.1; 
-                                                        //         // }
-                                                        //         // else if(right_size <= 65 || (right_interval == -1 && left_interval == -1)){
-                                                        //         //        y_goal_ = 0.13;
-                                                        //         // }
-                                                        // }
-                                                        
-                                                        int right_size = right_lane_fitting.size();
-                                                        if(right_interval < 40){//} || right_size <40 ){//|| right_slope < 0.38){
-                                                                y_goal_ = 0.23;
-                                                               // curve_mode = true;
-                                                              //  curve_stage = 0;
-                                                        }    
-                                                        if(pre_right_interval == -1){
-                                                                if(abs(pre_right_interval-right_interval)>90) y_goal_ = prev_y_goal_;
-                                                        } 
-                                                         if(left_interval == -1 && right_interval == -1){
-                                                                y_goal_ = prev_y_goal_;
-                                                        }
+                                        else if(pre_left_interval != -1 && left_interval == -1){
+                                                if(pre_right_interval == -1 && right_interval != -1){
+                                                        y_goal_ = prev_y_goal_;
                                                 }
-                                                // if(right_slope > -0.44){
-                                                //         x_goal_ = 0;
-                                                //         y_goal_ = 0.5;
-                                                // }
-                                                // else{
-                                                //         y_goal_ = 0;
-                                                // }
-
-
-                                                // if(right_lane_fitting.size()>65 && right_lane_fitting.size() <= 80 && right_interval > right_min_interval && right_interval < right_max_interval){
-                                                //         y_goal_ = 0.28;  
-                                                // }
-                                                // else if(right_lane_fitting.size() <= 65){
-                                                //         y_goal_ = 0.33;
-                                                // }
-                                                //int right_dir = 0;
-                                                //right_dir = slopeCheck(slope_test,right_lane_fitting,"right");
-                                                // if(right_direction_cnt >3 && right_interval > right_min_interval && right_interval < right_max_interval){
-                                                //         y_goal_ = 0.28;
-                                                //         right_direction_cnt = 0;
-                                                // }
-                                                
-                                                
-                                      //  }
-                                        else if(!left_lane_fitting.empty() && right_lane_fitting.empty()){
-                                                
-                                               // if(msg_count_left >= 7){
-                                                        // int left_size = -1;
-                                                        // int left_size_sum = 0;
-                                                        // if(!left_size_vec.empty()){
-                                                                
-                                                        //         for(int i = 0; i<left_size_vec.size(); i++){
-                                                        //                 left_size_sum += left_size_vec[i];
-                                                        //         }
-                                                        //         left_size = left_size_sum/left_size_vec.size();
-                                                                
-                                                        // }
-                                                        if(pre_left_interval != -1 && left_lane_fitting.size() > 70){
-                                                              //  if(abs(pre_left_interval - left_interval) > 15) left_interval = -1;//left_min_interval + 1;
-                                                        }
-                                                        // if(pre_left_interval != -1 && left_interval == -1){
-                                                        //         left_interval = pre_left_interval;
-                                                        // }
-                                                       // if(left_interval == -1) left_interval = left_min_interval + 1;
-                                                        if((left_interval > left_min_interval && left_interval < left_max_interval) || left_interval == -1){//go straight condition
-                                                                y_goal_ = 0;        
-                                                        }
-                                                        else{
-                                                                //** left lane tracking condition
-                                                                //x_goal_ = 0;
-                                                                if(left_interval <= left_min_interval){//need right rotation(ang_vel<0 : right rotation)
-                                                                        if(abs(left_interval - left_min_interval) <= 10) y_goal_ = -0.1;
-                                                                        else if(abs(left_interval - left_min_interval) >= 10 && abs(left_interval - left_min_interval) < 20) y_goal_ = -0.13;
-                                                                        else y_goal_ = -0.16;        
-                                                                }
-                                                                else{//need left rotation(ang_vel>0 : left rotation)
-                                                                        if(abs(left_interval - left_max_interval) <= 10) y_goal_ = 0.1;
-                                                                        else if(abs(left_interval - left_max_interval) >= 10 && abs(left_interval - left_max_interval) < 20) y_goal_ = 0.13;
-                                                                        else y_goal_ = 0.16;
-                                                                        
-                                                                }
-                                                        }
-                                                        // if(!left_size_vec.empty()){
-                                                                
-                                                        //         if(left_size > 65 && left_size <= 80  && left_interval > left_min_interval && left_interval < left_max_interval){
-                                                        //               //  y_goal_ = -0.1; 
-                                                        //         }
-                                                        //         else if(left_size <= 65){
-                                                        //          //       x_goal_ = 0;
-                                                        //               //  y_goal_ = -0.13;
-                                                        //         }
-                                                        // }
-                                                        int left_size = left_lane_fitting.size();
-                                                        if(left_interval < 40){//|| left_size < 40){
-                                                                y_goal_ = -0.23;
-                                                                //curve_mode = true;
-                                                                //curve_stage = 5;
-                                                        }
-                                                        if(pre_left_interval == -1){
-                                                                if(abs(pre_left_interval-left_interval)>90) y_goal_ = prev_y_goal_;
-                                                        } 
-                                                         if(left_interval == -1 && right_interval == -1){
-                                                                y_goal_ = prev_y_goal_;
-                                                        }
-                                               // }
-                                                
-                                                // if(left_lane_fitting.size() > 65 && left_lane_fitting.size() <= 80 && left_interval > left_min_interval && left_interval < left_max_interval){
-                                                //         y_goal_ = -0.28;  
-                                                // }
-                                                // else if(left_lane_fitting.size() <= 65){
-                                                //         y_goal_ = -0.33;
-                                                // }
-                                                // //int left_dir = 0;
-                                                // //left_dir = slopeCheck(slope_test,left_lane_fitting,"left");
-                                                // if(left_direction_cnt > 3 && left_interval > left_min_interval && left_interval < left_max_interval){
-                                                //         y_goal_ = -0.28;
-                                                //         left_direction_cnt = 0;
-                                                // } 
-                                                
                                         }
-                                        else{//if detected no lane, than go straight
-                                                if(prev_y_goal_ < 0){
-                                                        x_goal_ = 0.03;//.08;
-                                                        y_goal_ = 0;//13;
+                                        if(left_slope == 1.1){
+                                                if(right_slope > 0.4) y_goal_ = 0.1;
+                                                else y_goal_ = 0.2;
+                                        }
+                                }
+                                else if(left_interval == -1 && right_interval != -1){
+                                        std::cout<<"case 3 : 'only right interval is not -1'\n pre left roi slope : "<<pre_left_roi_slope <<", left slope : "<<left_roi_slope
+                                        <<",\n pre right roi slope : "<<pre_right_roi_slope <<", right slope : "<<right_roi_slope<<std::endl;
+                                        if((right_interval > right_min_interval && right_interval < right_max_interval)){//go straight condition
+                                                y_goal_ = 0;        
+                                        }
+                                        else{
+                                                //** right lane tracking condition
+                                                if(right_interval <= right_min_interval){//need left rotation(ang_vel>0 : left rotation)
+                                                        if(abs(right_interval - right_min_interval) <= 10) y_goal_ = 0.13;
+                                                        else if(abs(right_interval - right_min_interval) > 10 && abs(right_interval - right_min_interval) <= 20) y_goal_ = 0.2;
+                                                        else y_goal_ = 0.24;
                                                 }
-                                                else if(prev_y_goal_ > 0){
-                                                        x_goal_ = 0.03;//.08;
-                                                        y_goal_ = 0;//-0.13;
+                                                else{//need right rotation(ang_vel<0 : right rotation)
+                                                        if(abs(right_interval - right_max_interval) <= 10) y_goal_ = -0.13;
+                                                        else if(abs(right_interval - right_max_interval) > 10 && abs(right_interval - right_max_interval) <= 20) y_goal_ = -0.2;
+                                                        else y_goal_ = -0.24;
+                                                }
+                                        }
+                                        int right_size = right_lane_fitting.size();
+                                        if(right_interval < 40){
+                                              //  x_goal_ = 0;
+                                                y_goal_ = 0.24;
+                                        }  
+
+                                        if(left_roi_slope < 0 && right_roi_slope > 0){
+
+                                                if(abs(left_roi_slope + right_roi_slope) < 0.3){
+                                                        if(y_goal_ != 0) y_goal_ = 0;
                                                 }
                                                 else{
-                                                        //x_goal_ = 0;
-                                                        y_goal_ = 0;
-                                                }
-                                                
-                                                
+                                                        if(left_roi_slope <= -1){
+                                                                if(y_goal_<0) {
+                                                                        if(right_interval > 0.4){
+                                                                                y_goal_ = 0.23;
+                                                                        }
+                                                                        else{
+                                                                                y_goal_ = 0.32;
+                                                                        }
+                                                                                
+                                                                }   
+                                                        }
+                                                }       
+                                                // if(pre_left_roi_slope > 0 && pre_right_roi_slope > 0) y_goal_ = 0.24;
+                                                // else{
+                                                //         y_goal_ = prev_y_goal_; //left..right..?
+                                                // }
                                         }
-                                        
-                                        std::cout<<"x_goal_ : "<<x_goal_<<std::endl;
-                                        std::cout<<"y_goal_ : "<<y_goal_<<std::endl;
-                                        //std::cout<<"pre_left_interval : "<<pre_left_interval<<std::endl;
-                                        std::cout<<"right_interval : "<<right_interval<<std::endl;
-                                        std::cout<<"left_interval : "<<left_interval<<std::endl;
-                                        goal_array.data.clear();
-                                        goal_array.data.resize(0);
-                                        
-                                        goal_array.data.push_back(x_goal_);//linear_vel아님 정확힌 직진방향 x목표점임. 속도변수따로만들기
-                                        goal_array.data.push_back(y_goal_);
-                                        prev_y_goal_ = y_goal_;
-                                        msg_count_left = 0;
-                                        msg_count_right = 0;
-                                        left_interval_vec.clear();
-                                        right_interval_vec.clear();
-                                        left_interval_vec.resize(0);
-                                        right_interval_vec.resize(0);
-                                        pre_left_interval = left_interval;
-                                        pre_right_interval = right_interval;
-                                        left_interval = -1;
-                                        right_interval = -1;
-                                        
-                               // }
-                        }
-                        if(curve_mode){
-                                                
-                                                switch (curve_stage)
-                                                {
-                                                        case 0://left_turn by right line
-                                                                goal_array.data.clear();
-                                                                goal_array.data.resize(0);
-                                                                x_goal_ = 0;
-                                                                y_goal_ = 0;
-                                                                goal_array.data.push_back(x_goal_);//linear_vel아님 정확힌 직진방향 x목표점임. 속도변수따로만들기
-                                                                goal_array.data.push_back(y_goal_);
-                                                                curve_stage = 1;/* code */
-                                                                go_cnt = 0;
-                                                                break;
-                                                        case 1:
-                                                                goal_array.data.clear();
-                                                                goal_array.data.resize(0);
-                                                                x_goal_ = 0;
-                                                                y_goal_ = 0;
-                                                                goal_array.data.push_back(x_goal_);//linear_vel아님 정확힌 직진방향 x목표점임. 속도변수따로만들기
-                                                                goal_array.data.push_back(y_goal_);
-                                                                go_cnt++;
-                                                                if(go_cnt > 10){
-                                                                        curve_stage = 2;
-                                                                        go_cnt = 0;
-                                                                }
-                                                                break;
-                                                        case 2:
-                                                                goal_array.data.clear();
-                                                                goal_array.data.resize(0);
-                                                                x_goal_ = 0;
-                                                                y_goal_ = 0.35;
-                                                                goal_array.data.push_back(x_goal_);//linear_vel아님 정확힌 직진방향 x목표점임. 속도변수따로만들기
-                                                                goal_array.data.push_back(y_goal_);
-                                                                go_cnt++;
-                                                                if(go_cnt > 15){
-                                                                        curve_stage = 3;
-                                                                        go_cnt = 0;
-                                                                }
-                                                                break;
-                                                        case 3:
-                                                                goal_array.data.clear();
-                                                                goal_array.data.resize(0);
-                                                                x_goal_ = 0.08;
-                                                                y_goal_ = 0;
-                                                                goal_array.data.push_back(x_goal_);//linear_vel아님 정확힌 직진방향 x목표점임. 속도변수따로만들기
-                                                                goal_array.data.push_back(y_goal_);
-                                                                go_cnt++;
-                                                                if(go_cnt > 5){
-                                                                        curve_stage = 4;
-                                                                        go_cnt = 0;
-                                                                }
-                                                                break;
-                                                        
-                                                        case 4:
-                                                                curve_mode = false;
-                                                                go_cnt = 0;
-                                                                break;
-                                                        case 5://left_turn by right line
-                                                                goal_array.data.clear();
-                                                                goal_array.data.resize(0);
-                                                                x_goal_ = 0;
-                                                                y_goal_ = 0;
-                                                                goal_array.data.push_back(x_goal_);//linear_vel아님 정확힌 직진방향 x목표점임. 속도변수따로만들기
-                                                                goal_array.data.push_back(y_goal_);
-                                                                curve_stage = 6;/* code */
-                                                                go_cnt = 0;
-                                                                break;
-                                                        case 6:
-                                                                goal_array.data.clear();
-                                                                goal_array.data.resize(0);
-                                                                x_goal_ = 0;
-                                                                y_goal_ = 0;
-                                                                goal_array.data.push_back(x_goal_);//linear_vel아님 정확힌 직진방향 x목표점임. 속도변수따로만들기
-                                                                goal_array.data.push_back(y_goal_);
-                                                                go_cnt++;
-                                                                if(go_cnt > 10){
-                                                                        curve_stage = 7;
-                                                                        go_cnt = 0;
-                                                                }
-                                                                break;
-                                                        case 7:
-                                                                goal_array.data.clear();
-                                                                goal_array.data.resize(0);
-                                                                x_goal_ = 0.1;
-                                                                y_goal_ = -0.35;
-                                                                goal_array.data.push_back(x_goal_);//linear_vel아님 정확힌 직진방향 x목표점임. 속도변수따로만들기
-                                                                goal_array.data.push_back(y_goal_);
-                                                                go_cnt++;
-                                                                if(go_cnt > 15){
-                                                                        curve_stage = 8;
-                                                                        go_cnt = 0;
-                                                                }
-                                                                break;
-                                                        case 8:
-                                                                goal_array.data.clear();
-                                                                goal_array.data.resize(0);
-                                                                x_goal_ = 0.08;
-                                                                y_goal_ = 0;
-                                                                goal_array.data.push_back(x_goal_);//linear_vel아님 정확힌 직진방향 x목표점임. 속도변수따로만들기
-                                                                goal_array.data.push_back(y_goal_);
-                                                                go_cnt++;
-                                                                if(go_cnt > 5){
-                                                                        curve_stage = 9;
-                                                                        go_cnt = 0;
-                                                                }
-                                                                break;
-                                                        
-                                                        case 9:
-                                                                curve_mode = false;
-                                                                go_cnt = 0;
-                                                                break;
-                                                }
+                                        else if(left_roi_slope>0 && right_roi_slope>0){
+                                                if(y_goal_ < 0.23) y_goal_ = 0.23;
+                                        }
+                                        else if(left_roi_slope<0 && right_roi_slope<0){
+                                                if(y_goal_ > -0.23) y_goal_ = -0.23;
+                                        }
+                                        else if(left_roi_slope > 0 && right_roi_slope < 0){
+                                              //  if(y_goal_ < 0.23) y_goal_ = 0.23;
+                                        }
+                                }
+                                else{
+                                        std::cout<<"case 4: 'all intervals are -1'\n pre left roi slope : "<<pre_left_roi_slope <<", left slope : "<<left_roi_slope
+                                        <<",\n pre right roi slope : "<<pre_right_roi_slope <<", right slope : "<<right_roi_slope<<std::endl;
+                                        if(prev_y_goal_ > -1 && prev_y_goal_ < 1){
+                                                 y_goal_ = prev_y_goal_;
+                                        }
 
-                                        }
+                                        // if(left_roi_slope < 0 && right_roi_slope > 0){
+
+                                        // }
+                                        // else if(left_roi_slope>0 && right_roi_slope>0){
+
+                                        // }
+                                        // else if(left_roi_slope<0 && right_roi_slope<0){
+
+                                        // }
+                                        // else if(left_roi_slope > 0 && right_roi_slope < 0){
+
+                                        // }
+                                       
+                                }
+                                // if(!left_lane_fitting.empty() && !right_lane_fitting.empty()){//tracking left lane(yellow lane)
+                                //         int left_size = left_lane_fitting.size(), right_size = right_lane_fitting.size();
+                                //         int direction_tmp = 0;
+                                        
+                                        
+                                //         if(pre_left_interval < 10 && pre_right_interval >= 10){// || pre_left_interval <= pre_right_interval
+                                //                 int error_cnt = 0;
+                                //                 if (left_lane_fitting.size() >= 10 && right_lane_fitting.size() >= 10)
+                                //                 {
+                                //                         for (int i = 0; i < 10; i++)
+                                //                         {
+                                //                                 if (abs(left_lane_fitting[i].x - right_lane_fitting[right_lane_fitting.size() - 1].x) < 40)
+                                //                                 {
+
+                                //                                         error_cnt++;
+                                //                                 }
+                                //                         }
+                                //                         if (error_cnt > 4)
+                                //                         {
+                                //                                 left_interval = -1;
+                                //                                 left_lane_fitting.clear();
+                                //                                 left_lane_fitting.resize(0);
+                                //                                 direction_tmp = 1;
+                                //                         }
+                                //                 }
+                                //                 else
+                                //                 {
+                                //                         if (abs(left_lane_fitting[0].x - right_lane_fitting[right_lane_fitting.size() - 1].x) < 40)
+                                //                         {
+                                //                                 left_interval = -1;
+                                //                                 left_lane_fitting.clear();
+                                //                                 left_lane_fitting.resize(0);
+                                //                                 direction_tmp = 1;
+                                //                         }
+                                //                 }
+                                //         }
+                                //         else if(pre_right_interval < 10 && pre_left_interval >= 10){// || pre_left_interval > pre_right_interval
+                                //                 int error_cnt = 0;
+                                //                 if (right_lane_fitting.size() >= 10 && left_lane_fitting.size() >= 10)
+                                //                 {
+                                //                         for (int i = 0; i < 10; i++)
+                                //                         {
+                                //                                 if (abs(right_lane_fitting[i].x - left_lane_fitting[left_lane_fitting.size() - 1].x) < 40)
+                                //                                 {
+                                //                                         error_cnt++;
+                                //                                 }
+                                //                         }
+                                //                         if (error_cnt > 4)
+                                //                         {
+                                //                                 right_interval = -1;
+                                //                                 right_lane_fitting.clear();
+                                //                                 right_lane_fitting.resize(0);
+                                //                                 direction_tmp = -1;
+                                //                         }
+                                //                 }
+                                //                 else
+                                //                 {
+                                //                         if (abs(right_lane_fitting[0].x - left_lane_fitting[left_lane_fitting.size() - 1].x) < 40)
+                                //                         {
+                                //                                 right_interval = -1;
+                                //                                 right_lane_fitting.clear();
+                                //                                 right_lane_fitting.resize(0);
+                                //                                 direction_tmp = -1;
+                                //                         }
+                                //                 }
+                                //         }
+                                //         if(left_interval == -1 && pre_left_interval > 10){
+                                //                 left_interval = pre_left_interval;
+                                //         }
+                                //         if(right_interval == -1 && pre_right_interval > 10){
+                                //                 right_interval = pre_right_interval;
+                                //         }
+                                //         if(direction_tmp < 0 || right_interval == -1){
+                                //                 if((left_interval > left_min_interval && left_interval < left_max_interval) || left_interval == -1){//go straight condition
+                                //                         y_goal_ += 0;        
+                                //                 }
+                                //                 else{        //** left lane tracking condition
+                                //                         if(left_interval <= left_min_interval){//need right rotation(ang_vel<0 : right rotation)
+                                //                                 if(abs(left_interval - left_min_interval) < 10) y_goal_ = -0.05;
+                                //                                         else if(abs(left_interval - left_min_interval) >= 10 && abs(left_interval - left_min_interval) < 20) y_goal_ = -0.1;
+                                //                                         else y_goal_ = -0.15;        
+                                //                                 }
+                                //                                 else{//need left rotation(ang_vel>0 : left rotation)
+                                //                                         if(abs(left_interval - left_max_interval) < 10) y_goal_ = 0.05;
+                                //                                         else if(abs(left_interval - left_max_interval) >= 10 && abs(left_interval - left_max_interval) < 20) y_goal_= 0.1;
+                                //                                         else y_goal_ = 0.15;
+                                //                                 }
+                                //                 }
+                                //         }
+                                //         else if(direction_tmp >=0 || left_interval == -1){
+                                //                        // if(msg_count_right >= 7){// && my_dir == 1){
+                                //                 if((right_interval > right_min_interval && right_interval < right_max_interval) || right_interval == -1){//go straight condition
+                                //                         y_goal_ += (float)0.0;        
+                                //                 }
+                                //                 else{
+                                //                         //** right lane tracking condition
+                                //                         if(right_interval <= right_min_interval){//need left rotation(ang_vel>0 : left rotation)
+                                //                                 if(abs(right_interval - right_min_interval) < 10) y_goal_ += (float)0.05;
+                                //                                 else if(abs(right_interval - right_min_interval) >= 10 && abs(right_interval - right_min_interval) < 20) y_goal_ += (float)0.1;
+                                //                                 else y_goal_ += (float)0.15;
+                                //                         }
+                                //                         else{//need right rotation(ang_vel<0 : right rotation)
+                                //                                 if(abs(right_interval - right_max_interval) < 10) y_goal_ += (float)-0.05;
+                                //                                 else if(abs(right_interval - right_max_interval) >= 10 && abs(right_interval - right_max_interval) < 20) y_goal_ += (float)-0.1;
+                                //                                 else y_goal_ += (float)-0.15;
+                                //                         }
+                                //                 }     
+                                //         }
+                                //         if(left_interval == -1 && right_interval == -1){
+                                //                 y_goal_ = prev_y_goal_;
+                                //         }  
+                                        
+                                // }
+                                // else if(!right_lane_fitting.empty() && left_lane_fitting.empty()){//tracking right lane(white lane)
+                                //         if((right_interval > right_min_interval && right_interval < right_max_interval) || right_interval == -1){//go straight condition
+                                //                 y_goal_ = 0;        
+                                //         }
+                                //         else{
+                                //                 //** right lane tracking condition
+                                //                 if(right_interval <= right_min_interval){//need left rotation(ang_vel>0 : left rotation)
+                                //                         if(abs(right_interval - right_min_interval) <= 10) y_goal_ = 0.13;
+                                //                         else if(abs(right_interval - right_min_interval) > 10 && abs(right_interval - right_min_interval) <= 20) y_goal_ = 0.2;
+                                //                         else y_goal_ = 0.34;
+                                //                 }
+                                //                 else{//need right rotation(ang_vel<0 : right rotation)
+                                //                         if(abs(right_interval - right_max_interval) <= 10) y_goal_ = -0.13;
+                                //                         else if(abs(right_interval - right_max_interval) > 10 && abs(right_interval - right_max_interval) <= 20) y_goal_ = -0.2;
+                                //                         else y_goal_ = -0.34;
+                                //                 }
+                                //         }
+                                //         int right_size = right_lane_fitting.size();
+                                //         if(right_interval < 40){
+                                //                 y_goal_ = 0.34;
+                                //         }    
+                                //         if(pre_right_interval == -1){
+                                //        //         if(abs(pre_right_interval-right_interval)>90) y_goal_ = prev_y_goal_;
+                                //         } 
+                                //         if(left_interval == -1 && right_interval == -1){
+                                //                 y_goal_ = prev_y_goal_;
+                                //         }  
+                                // }
+                                // else if(!left_lane_fitting.empty() && right_lane_fitting.empty()){
+                                //         if((left_interval > left_min_interval && left_interval < left_max_interval) || left_interval == -1){//go straight condition
+                                //                 y_goal_ = 0;        
+                                //         }
+                                //         else{
+                                //                 //** left lane tracking condition
+                                //                 if(left_interval <= left_min_interval){//need right rotation(ang_vel<0 : right rotation)
+                                //                         if(abs(left_interval - left_min_interval) <= 10) y_goal_ = -0.13;
+                                //                         else if(abs(left_interval - left_min_interval) >= 10 && abs(left_interval - left_min_interval) < 20) y_goal_ = -0.2;
+                                //                         else y_goal_ = -0.34;        
+                                //                 }
+                                //                 else{//need left rotation(ang_vel>0 : left rotation)
+                                //                         if(abs(left_interval - left_max_interval) <= 10) y_goal_ = 0.13;
+                                //                         else if(abs(left_interval - left_max_interval) >= 10 && abs(left_interval - left_max_interval) < 20) y_goal_ = 0.2;
+                                //                         else y_goal_ = 0.34;
+                                //                 }
+                                //         }
+                                //         int left_size = left_lane_fitting.size();
+                                //         if(left_interval < 40){//|| left_size < 40){
+                                //                 y_goal_ = -0.34;
+                                //         }
+                                //         if(pre_left_interval == -1){
+                                //             //    if(abs(pre_left_interval-left_interval)>90) y_goal_ = prev_y_goal_;
+                                //         } 
+                                //         if(left_interval == -1 && right_interval == -1){
+                                //                 y_goal_ = prev_y_goal_;
+                                //         }    
+                                // }
+                                // else{//if detected no lane, than go straight
+                                //         x_goal_ = -0.1;
+                                //         y_goal_ = 0;
+                                //         // if(prev_y_goal_ < 0){
+                                //         //         x_goal_ = 0.03;//.08;
+                                //         //         y_goal_ = 0;//13;
+                                //         // }
+                                //         // else if(prev_y_goal_ > 0){
+                                //         //         x_goal_ = 0.03;//.08;
+                                //         //         y_goal_ = 0;//-0.13;
+                                //         // }
+                                //         // else{
+                                //         //         y_goal_ = 0;
+                                //         // }
+                                // }
+                                        
+                                std::cout<<"x_goal_ : "<<x_goal_<<std::endl;
+                                std::cout<<"y_goal_ : "<<y_goal_<<std::endl;
+                                std::cout<<"right_interval : "<<right_interval<<std::endl;
+                                std::cout<<"left_interval : "<<left_interval<<std::endl;
+                                std::cout<<"************************************************************************"<<std::endl;       
+                                goal_array.data.clear();
+                                goal_array.data.resize(0);
+                                goal_array.data.push_back(x_goal_);//linear_vel아님 정확힌 직진방향 x목표점임. 속도변수따로만들기
+                                goal_array.data.push_back(y_goal_);
+                                //////////////////////////////////////////nomal아닐때도 갱신 되도록....?
+                                prev_y_goal_ = y_goal_;
+                                msg_count_left = 0;
+                                msg_count_right = 0;
+                                left_interval_vec.clear();
+                                right_interval_vec.clear();
+                                left_interval_vec.resize(0);
+                                right_interval_vec.resize(0);
+                                pre_left_interval = left_interval;
+                                pre_right_interval = right_interval;
+                                pre_left_size = left_lane_fitting.size();
+                                pre_right_size = right_lane_fitting.size();
+                                pre_left_roi_slope = left_roi_slope;
+                                pre_right_roi_slope = right_roi_slope;
+                                left_interval = -1;
+                                right_interval = -1;
+                                
+                        }
+                        
                         cv::Mat ss = frame.clone();
-                        if(parking_mode){
-                                std::vector<cv::Point> object_check;
+                        if(parking_mode && !blocking_bar_mode && !signal_lamp_mode && !tunnel_mode){
+                                
                                 cv::Mat parked = origin_white_hsv.clone();
-                                cv::Mat colored_park = frame.clone();
+                                cv::Mat park_zero = cv::Mat::zeros(origin_white_hsv.size(), CV_8UC1);
                                 switch (parking_stage)
                                 {
-                                        case 0: 
+                                        case 0:
                                                 goal_array.data.clear();
                                                 goal_array.data.resize(0);
                                                 x_goal_ = 0;
                                                 y_goal_ = 0;
                                                 goal_array.data.push_back(x_goal_);//linear_vel아님 정확힌 직진방향 x목표점임. 속도변수따로만들기
                                                 goal_array.data.push_back(y_goal_);
-                                                //hsv
-                                                // if(!dot_lane_fitting.empty()){
-                                                //         // for(int i = 0; i<dot_lane_fitting.size()-1; i++){
-                                                //         //         if(abs(dot_lane_fitting[i].y - dot_lane_fitting[i+1].y) > 6){
-                                                //         //                 cv::putText(ss, std::to_string(dot_lane_fitting[i].y), dot_lane_fitting[i], 
-                                                //         //                 cv::FONT_HERSHEY_SIMPLEX, 0.6, cv::Scalar(235,25,255), 2);
-                                                //         //                 cv::putText(ss, std::to_string(dot_lane_fitting[i+1].y), dot_lane_fitting[i+1], 
-                                                //         //                 cv::FONT_HERSHEY_SIMPLEX, 0.3, cv::Scalar(235,25,255), 2);
-                                                //         //                 cv::line(ss,dot_lane_fitting[i], dot_lane_fitting[i+1],cv::Scalar(200,200,20),2.4);
-                                                //         //                 first_point = dot_lane_fitting[i];
-                                                //         //         }
-                                                //         // }
-                                                // }
-                                                parking_stage = 1;
+                                                go_cnt++;
+                                                if(left_lane_fitting.size() < 50){
+                                                        goal_array.data.clear();
+                                                        goal_array.data.resize(0);
+                                                        x_goal_ = 0;
+                                                        y_goal_ = 0.1;
+                                                        goal_array.data.push_back(x_goal_);//linear_vel아님 정확힌 직진방향 x목표점임. 속도변수따로만들기
+                                                        goal_array.data.push_back(y_goal_);
+                                                }
+                                                else if(left_lane_fitting.size()>=50){
+                                                        goal_array.data.clear();
+                                                        goal_array.data.resize(0);
+                                                        x_goal_ = 0;
+                                                        y_goal_ = 0;
+                                                        goal_array.data.push_back(x_goal_);//linear_vel아님 정확힌 직진방향 x목표점임. 속도변수따로만들기
+                                                        goal_array.data.push_back(y_goal_);
+                                                        parking_stage = 1;
+                                                        go_cnt = 0;
+                                                }
+                                                
                                                 break;
                                         case 1: 
                                                 goal_array.data.clear();
                                                 goal_array.data.resize(0);
-                                                x_goal_ = 0.05;
+                                                x_goal_ = 0;
                                                 y_goal_ = 0;
                                                 goal_array.data.push_back(x_goal_);//linear_vel아님 정확힌 직진방향 x목표점임. 속도변수따로만들기
                                                 goal_array.data.push_back(y_goal_);
                                                 go_cnt++;
-                                                if(go_cnt > 10){
+                                                if(go_cnt > 2){
                                                         parking_stage = 2;
                                                         go_cnt = 0;
                                                 }
@@ -1245,7 +1298,7 @@ void InitImgObjectforROS::imgCb(const sensor_msgs::ImageConstPtr& img_msg){
                                                 goal_array.data.push_back(x_goal_);//linear_vel아님 정확힌 직진방향 x목표점임. 속도변수따로만들기
                                                 goal_array.data.push_back(y_goal_);
                                                 go_cnt++;
-                                                if(go_cnt > 10){
+                                                if(go_cnt > 1){
                                                         parking_stage = 3;
                                                         go_cnt = 0;
                                                 }
@@ -1258,7 +1311,7 @@ void InitImgObjectforROS::imgCb(const sensor_msgs::ImageConstPtr& img_msg){
                                                 goal_array.data.push_back(x_goal_);//linear_vel아님 정확힌 직진방향 x목표점임. 속도변수따로만들기
                                                 goal_array.data.push_back(y_goal_);
                                                 go_cnt++;
-                                                if(go_cnt > 25){
+                                                if(go_cnt > 30){
                                                         parking_stage = 4;
                                                         go_cnt = 0;
                                                 }
@@ -1271,120 +1324,80 @@ void InitImgObjectforROS::imgCb(const sensor_msgs::ImageConstPtr& img_msg){
                                                 goal_array.data.push_back(x_goal_);//linear_vel아님 정확힌 직진방향 x목표점임. 속도변수따로만들기
                                                 goal_array.data.push_back(y_goal_);
                                                 go_cnt++;
-                                                if(go_cnt > 5){
+                                                if(go_cnt > 2){
                                                         parking_stage = 5;
                                                         go_cnt = 0;
                                                 }
                                                 break;
                                         case 5: 
                                                 {
-                                               
-                                                int y_pt = -1, st_x_pt = -1, no_pt = 0;
-                                                for(int x = 0; x<parked.cols; x++){
-                                                        uchar* park_pt = parked.ptr<uchar>(x);
-                                                        no_pt = 0;
-                                                        for(int y = parked.rows-1; y>0; y--){
-                                                                if(park_pt[y] != (uchar)0){
-                                                                        if(no_pt>100){
-                                                                                st_x_pt = x;
-                                                                                y_pt = y;
-                                                                                break;
-                                                                        }      
-                                                                }
-                                                                else{
-                                                                        no_pt++;
-                                                                }
-                                                        }
-                                                        if(st_x_pt != -1){
-                                                                break;
-                                                        }
-                                                }
-                                                no_pt = 0;
-                                                // for(int x = 0; x<parked.cols; x++){
-                                                //         uchar* park_pt = parked.ptr<uchar>(x);
-                                                //         int no_pt = 0;
-                                                //         for(int y = parked.rows-1; y>0; y--){
-                                                //                 if(park_pt[y] != (uchar)0){
-                                                //                         if(no_pt<5){
-                                                //                                 no_pt = 0;
-                                                //                                 center_sum++;
-                                                //                         }
-                                                //                         else{
-                                                //                                 break;
-                                                //                         }
-                                                //                 }
-                                                //                 else{
-                                                //                         no_pt++;
-                                                //                 }
-                                                //         }
-                                                //         if(abs(pre_center_sum - center_sum) > 60 && pre_center_sum != -1){
-                                                //                 park_center_x = x;
-                                                //                 break;
-                                                //         }
-                                                //         pre_center_sum = center_sum;
-                                                //         center_sum = 0;
-                                                // }
-                                                //if(center_sum != -1){
-                                                        // for(int y = y_pt; x<parked.cols; x++){
-                                                int good_pt = 0;
-
-                                                uchar* park_pt = parked.ptr<uchar>(y_pt - 2);
-                                                for(int x = st_x_pt; x<parked.cols; x++){
-                                                        if(park_pt[x] == (uchar)0){
-                                                                no_pt++;
-                                                                if(no_pt > 10){
+                                                
+                                                cv::cvtColor(park_origin, park_origin, CV_BGR2GRAY);
+                                                cv::Canny(park_origin, park_origin, (park_origin.rows + park_origin.cols) / 4, (park_origin.rows + park_origin.cols) / 2);
+                                                cv::Mat element_park(3, 3, CV_8U, cv::Scalar(1));
+                                                cv::dilate(park_origin, park_origin, element_park);
+                                                cv::Sobel(park_origin, park_origin, park_origin.depth(), 0, 1);
+                                                cv::Mat park_zero = cv::Mat::zeros(park_origin.size(), CV_8UC1);
+                                                std::vector<cv::Point> park_line_test;
+                                                for (int x = park_origin.cols / 2 - 70; x < park_origin.cols / 2 + 70; x++)
+                                                {
+                                                        for (int y = 170; y > 130; y--)
+                                                        {
+                                                                uchar *park_pt = park_origin.ptr<uchar>(y);
+                                                                uchar *parkline_data = park_zero.ptr<uchar>(y);
+                                                                if (park_pt[x] != (uchar)0)
+                                                                {
+                                                                        park_line_test.push_back(cv::Point(x, y));
+                                                                        parkline_data[x] = (uchar)255;
                                                                         break;
                                                                 }
-                                                                else{
-                                                                        no_pt = 0;
+                                                        }
+                                                }
+                                                int line_max = -1, line_tmp = 0;
+                                                for (int y = 170; y > 130; y--)
+                                                {
+                                                        for (int i = 0; i < park_line_test.size(); i++)
+                                                        {
+                                                                if (park_line_test[i].y == y)
+                                                                {
+                                                                        for (int x = park_origin.cols / 2 - 70; x < park_origin.cols / 2 + 70; x++)
+                                                                        {
+                                                                                if (park_line_test[i].x == x)
+                                                                                {
+                                                                                        line_tmp++;
+                                                                                }
+                                                                        }
                                                                 }
                                                         }
-                                                        else{
-                                                                good_pt++;
+                                                        if (line_tmp > line_max)
+                                                        {
+                                                                line_max = line_tmp;
+                                                                line_tmp = 0;
                                                         }
-                                                        //std::cout<<"check x : "<<x<<std::endl;
                                                 }
+                                                std::cout << "park line_tmp : " << line_tmp << std::endl;
+                                                cv::imshow("park_zero", park_zero);
+                                                go_cnt++;
+                                                if(line_max > 30){
+                                                        parking_reliabilty++;
+                                                }  
+                                                if(go_cnt > 7){
+                                                        if(parking_reliabilty>4){
+                                                                parking_stage = 6;
+                                                                go_cnt = 0;
+                                                        }
+                                                        else{
+                                                                parking_stage = 13;
+                                                                go_cnt = 0;
+                                                        }
+                                                }                                      
                                                 
-                                                if(no_pt <= 10 || good_pt > parked.cols/2){
-                                                        parking_stage = 6;
-                                                }
-                                                else{
-                                                        parking_stage = 13;
-                                                }
-                                                        // }
-                                                        // for(int x = park_center_x; x<parked.cols; x++){
-                                                        //         uchar* park_pt = parked.ptr<uchar>(x);
-                                                        //         for(int y = parked.rows-1; y>0; y--){
-                                                        //                 if(park_pt[y] != (uchar)0){
-                                                        //                         object_check.push_back(cv::Point(x,y));
-                                                        //                         park_pt[y*parked.channels()+1] = 50;
-                                                        //                         std::cout<<"object_check(x,y) : "<<cv::Point(x,y)<<std::endl;
-                                                        //                 }
-                                                        //         }
-                                                        // }
-                                                        // int check_y = 0;
-                                                        // for(int i = 0; i<object_check.size()-1; i++){
-                                                        //         if(abs(object_check[i].y - object_check[i+1].y) > 50){
-                                                        //                 if(abs(object_check[i].x - object_check[i+1].x)<3){
-                                                        //                         check_y++;
-                                                        //                 }
-                                                                        
-                                                        //         }
-                                                        // }
-                                                        
-                                                        // if(check_y > 6){
-                                                        //         parking_stage = 6;
-                                                                
-                                                        // }
-                                                        // else{
-                                                        //         parking_stage = 13;
-                                                        // }
-                                                //}
+                                                       
                                                 }
                                                 break;
                                         case 6://first parking area
                                                 {
-                                                if(go_cnt<20){
+                                                if(go_cnt<33){
                                                         goal_array.data.clear();
                                                         goal_array.data.resize(0);
                                                         x_goal_ = 0.05;
@@ -1433,7 +1446,7 @@ void InitImgObjectforROS::imgCb(const sensor_msgs::ImageConstPtr& img_msg){
                                                 }
                                                 break;        
                                         case 8 :
-                                                if(go_cnt<20){
+                                                if(go_cnt<28){
                                                         goal_array.data.clear();
                                                         goal_array.data.resize(0);
                                                         x_goal_ = -0.05;
@@ -1476,7 +1489,7 @@ void InitImgObjectforROS::imgCb(const sensor_msgs::ImageConstPtr& img_msg){
                                                 goal_array.data.push_back(x_goal_);//linear_vel아님 정확힌 직진방향 x목표점임. 속도변수따로만들기
                                                 goal_array.data.push_back(y_goal_);
                                                 go_cnt++;
-                                                if(go_cnt > 25){
+                                                if(go_cnt > 30 && left_lane_fitting.size() > 40){
 
                                                         parking_stage = 11;
                                                         go_cnt = 0;
@@ -1490,7 +1503,15 @@ void InitImgObjectforROS::imgCb(const sensor_msgs::ImageConstPtr& img_msg){
                                                 goal_array.data.push_back(x_goal_);//linear_vel아님 정확힌 직진방향 x목표점임. 속도변수따로만들기
                                                 goal_array.data.push_back(y_goal_);
                                                 go_cnt++;
-                                                if(go_cnt > 10){
+                                                if(go_cnt < 20 && right_lane_fitting.size()>20){
+                                                     goal_array.data.clear();
+                                                        goal_array.data.resize(0);
+                                                        x_goal_ = 0.1;
+                                                        y_goal_ = 0;
+                                                        goal_array.data.push_back(x_goal_);//linear_vel아님 정확힌 직진방향 x목표점임. 속도변수따로만들기
+                                                        goal_array.data.push_back(y_goal_);   
+                                                }
+                                                else if(go_cnt >= 20 && right_lane_fitting.size()<=20){
                                                         go_cnt = 0;
                                                         parking_stage = 12;
                                                 }
@@ -1522,7 +1543,7 @@ void InitImgObjectforROS::imgCb(const sensor_msgs::ImageConstPtr& img_msg){
                                                 goal_array.data.push_back(x_goal_);//linear_vel아님 정확힌 직진방향 x목표점임. 속도변수따로만들기
                                                 goal_array.data.push_back(y_goal_);
                                                 go_cnt++;
-                                                if(go_cnt > 25){
+                                                if(go_cnt > 30 && left_lane_fitting.size()>40){
 
                                                         parking_stage = 15;
                                                         go_cnt = 0;
@@ -1549,7 +1570,7 @@ void InitImgObjectforROS::imgCb(const sensor_msgs::ImageConstPtr& img_msg){
                                                 goal_array.data.push_back(x_goal_);//linear_vel아님 정확힌 직진방향 x목표점임. 속도변수따로만들기
                                                 goal_array.data.push_back(y_goal_);
                                                 go_cnt++;
-                                                if(go_cnt > 20){
+                                                if(go_cnt > 20 && left_lane_fitting.size()<60){
                                                         parking_stage = 17;
                                                         go_cnt = 0;
                                                 }
@@ -1575,7 +1596,7 @@ void InitImgObjectforROS::imgCb(const sensor_msgs::ImageConstPtr& img_msg){
                                                 goal_array.data.push_back(x_goal_);//linear_vel아님 정확힌 직진방향 x목표점임. 속도변수따로만들기
                                                 goal_array.data.push_back(y_goal_);
                                                 go_cnt++;
-                                                if(go_cnt > 25){
+                                                if(go_cnt > 30){
                                                         parking_stage = 19;
                                                         go_cnt = 0;
                                                 }
@@ -1595,7 +1616,7 @@ void InitImgObjectforROS::imgCb(const sensor_msgs::ImageConstPtr& img_msg){
                                                 break;
                                         case 20: 
                                                 {
-                                                if(go_cnt<20){
+                                                if(go_cnt<33){
                                                         goal_array.data.clear();
                                                         goal_array.data.resize(0);
                                                         x_goal_ = 0.05;
@@ -1631,7 +1652,7 @@ void InitImgObjectforROS::imgCb(const sensor_msgs::ImageConstPtr& img_msg){
                                                 }
                                                 break;
                                         case 22:
-                                                if(go_cnt<20){
+                                                if(go_cnt<28){
                                                         goal_array.data.clear();
                                                         goal_array.data.resize(0);
                                                         x_goal_ = -0.05;
@@ -1674,7 +1695,7 @@ void InitImgObjectforROS::imgCb(const sensor_msgs::ImageConstPtr& img_msg){
                                                 goal_array.data.push_back(x_goal_);//linear_vel아님 정확힌 직진방향 x목표점임. 속도변수따로만들기
                                                 goal_array.data.push_back(y_goal_);
                                                 go_cnt++;
-                                                if(go_cnt > 25){
+                                                if(go_cnt > 30 && left_lane_fitting.size()>30){
 
                                                         parking_stage = 25;
                                                         go_cnt = 0;
@@ -1703,13 +1724,13 @@ void InitImgObjectforROS::imgCb(const sensor_msgs::ImageConstPtr& img_msg){
                                                 
                                 
                                 }
-                                cv::imshow("park",parked);
+                                
                                 
                                 //parking_checked = true;
                                
                         }
                         //cv::imshow("ss",ss);
-                        if(blocking_bar_mode){
+                        if(blocking_bar_mode && !parking_mode && !signal_lamp_mode && !tunnel_mode){
                                 switch(blocking_bar_stage){
                                         case 0: 
                                                 goal_array.data.clear();
@@ -1732,11 +1753,11 @@ void InitImgObjectforROS::imgCb(const sensor_msgs::ImageConstPtr& img_msg){
                                                 goal_array.data.push_back(x_goal_);//linear_vel아님 정확힌 직진방향 x목표점임. 속도변수따로만들기
                                                 goal_array.data.push_back(y_goal_);
                                                 go_cnt++;
-                                                if(go_cnt > 30 && detectBlockingBar(red_hsv)){
+                                                if(go_cnt > 30 && !detectBlockingBar(red_hsv)){
                                                         blocking_bar_stage = 3;
                                                         go_cnt = 0;
                                                 }
-                                                else if(go_cnt > 30 && !detectBlockingBar(red_hsv)){
+                                                else if(go_cnt > 30 && detectBlockingBar(red_hsv)){
                                                         blocking_bar_stage = 5;
                                                         go_cnt = 0;
                                                 }
@@ -1798,6 +1819,12 @@ void InitImgObjectforROS::imgCb(const sensor_msgs::ImageConstPtr& img_msg){
                                                         blocking_bar_stage = 2;
                                                         go_cnt = 0;
                                                 }
+                                                else if(go_cnt > 30 && detectBlockingBar(red_hsv)){
+                                                        go_cnt = 0;
+                                                        blocking_bar_mode = 0;
+                                                        blocking_bar_checked = false;
+                                                        blocking_bar_stage = 0;
+                                                }
                                                 break;
                                         
                                 }
@@ -1813,20 +1840,7 @@ void InitImgObjectforROS::imgCb(const sensor_msgs::ImageConstPtr& img_msg){
                         extractLanePoint(origin,mergelane);
 
                         output_origin_for_copy = origin.clone();        
-                        // left_point = false;
-                        // right_point = false;
                         
-                        // left_theta = 0;
-                        // right_theta = 0;
-                        // if(is_left_box_true && is_right_box_true){
-                        //         center_cali = abs(left_lane_fitting[20].x - right_lane_fitting[20].x)/2;
-                        // }
-                        // else if(is_left_box_true){
-                        //         center_cali = left_lane_fitting[20].x + 50;
-                        // }
-                        // else{
-                        //         center_cali = right_lane_fitting[20].x - 50;
-                        // }
                         
                 }
                 else{//frame is empty
@@ -2167,7 +2181,7 @@ void InitImgObjectforROS::setMyHSVTrackbarValue(const string &trackbar_name){
              
 }
 
-void InitImgObjectforROS::setColorPreocessing(lane_detect_algo::CalLane callane, cv::Mat src, cv::Mat& dst_y, cv::Mat& dst_w, cv::Mat& dst_r, cv::Mat& dst_r2, cv::Mat& dst_g, cv::Mat& dst_y2){
+void InitImgObjectforROS::setColorPreocessing(lane_detect_algo::CalLane callane, cv::Mat src, cv::Mat& dst_y, cv::Mat& dst_w, cv::Mat& dst_r, cv::Mat& dst_r2, cv::Mat& dst_g, cv::Mat& dst_y2, cv::Mat& parking_white){
                 ////*Make trackbar obj*////
                 if(track_bar){
                         setMyHSVTrackbarValue(groupName+"_YELLOW_LANE_TRACKBAR");
@@ -2183,6 +2197,9 @@ void InitImgObjectforROS::setColorPreocessing(lane_detect_algo::CalLane callane,
 
 
                 bev = src.clone();
+                
+                callane.birdEyeView_left(src,parking_white);
+                cv::imshow("bev",parking_white);
                 //cv::imshow(groupName+"bev",bev);
                 if(groupName == "main"){//If you test by video, use one camera (please comment out the other camera)
                         if(bird_eye_view){
@@ -2212,6 +2229,7 @@ void InitImgObjectforROS::setColorPreocessing(lane_detect_algo::CalLane callane,
                         //for detect lane color
                         callane.detectYHSVcolor(bev, dst_y, y_hmin, y_hmax, y_smin, y_smax, y_vmin, y_vmax);
                         callane.detectWhiteRange(bev,dst_w, w_hmin, w_hmax, w_smin, w_smax, w_vmin, w_vmax,0,0);
+                        callane.detectWhiteRange(parking_white,parking_white, w_hmin, w_hmax, w_smin, w_smax, w_vmin, w_vmax,0,0);      
                         //for detect blocking bar color
                         callane.detectWhiteRange(bev,dst_r, r_hmin, r_hmax, r_smin, r_smax, r_vmin, r_vmax,0,0);
                         //for detect signal lamp
@@ -2219,14 +2237,14 @@ void InitImgObjectforROS::setColorPreocessing(lane_detect_algo::CalLane callane,
                         callane.detectWhiteRange(bev,dst_g, g_hmin, g_hmax, g_smin, g_smax, g_vmin, g_vmax,0,0);
                         callane.detectWhiteRange(bev,dst_y2, y2_hmin, y2_hmax, y2_smin, y2_smax, y2_vmin, y2_vmax,0,0);
 
-                        cv::imshow(groupName+"_YELLOW_LANE_TRACKBAR",dst_y);
+                    //    cv::imshow(groupName+"_YELLOW_LANE_TRACKBAR",dst_y);
                         cv::imshow(groupName+"_WHITE_LANE_TRACKBAR",dst_w);
 
                         cv::imshow(groupName+"_BLOCKING_RED_TRACKBAR",dst_r);
 
-                        cv::imshow(groupName+"_SIGNAL_RED_TRACKBAR",dst_r2);
-                         cv::imshow(groupName+"_SIGNAL_GREEN_TRACKBAR",dst_g);
-                        cv::imshow(groupName+"_SIGNAL_YELLOW_TRACKBAR",dst_y2);
+                        // cv::imshow(groupName+"_SIGNAL_RED_TRACKBAR",dst_r2);
+                        //  cv::imshow(groupName+"_SIGNAL_GREEN_TRACKBAR",dst_g);
+                        // cv::imshow(groupName+"_SIGNAL_YELLOW_TRACKBAR",dst_y2);
                        
                         
                 }
@@ -2396,10 +2414,19 @@ bool InitImgObjectforROS::setMyLaneFitting(cv::Mat& src_img, std::vector<cv::Poi
        
         bool return_val = true;
         if(lane_name == "left"){
+                int pre_x_pt = -1, pre_y_pt = -1;
                 for(int y = src_pt[1].y; y > src_pt[0].y; y--) {//
                         uchar* fitting_data = src_img.ptr<uchar>(y);
                         for(int x = src_pt[1].x; x > src_pt[0].x; x--) {                            
                                 if(fitting_data[x]!= (uchar)0) {
+                                        if(!dst.empty()){
+                                                if(abs(dst[dst.size()-1].x - x) > 10 || abs(dst[dst.size()-1].y - y)>10){
+                                                        break; //노란선은 점선 없으니 탈출.
+                                                }
+                                                else{
+                                                        dst.push_back(cv::Point(x,y));
+                                                }
+                                        }
                                         // if(x == src_pt[1].x){//left는 캐니엣지니까 이거 쓰면 안돼.
                                         //         int my_sum = 0;
                                         //         for(uint i = x; i > x-10; i--){
@@ -2414,7 +2441,12 @@ bool InitImgObjectforROS::setMyLaneFitting(cv::Mat& src_img, std::vector<cv::Poi
                                         //                 } 
                                         //         }
                                         // }
-                                        dst.push_back(cv::Point(x,y));
+                                        else{
+                                                dst.push_back(cv::Point(x,y));
+                                        }
+                                        
+                                        pre_x_pt = x;
+                                        pre_y_pt = y;
                                         break;
                                 }
                         }
@@ -2448,10 +2480,40 @@ bool InitImgObjectforROS::setMyLaneFitting(cv::Mat& src_img, std::vector<cv::Poi
                 // }
         }
         if(lane_name == "right"){
+                
+                int i = 0, j = recently_right_fitting_vec.size();
+                int first_fit_y = -1;
+                int pre_x_pt = 0, pre_y_pt = 0;
                 for(int y = src_pt[1].y; y>src_pt[0].y; y--) {
                         uchar* fitting_data = src_img.ptr<uchar>(y);
                         for(int x = src_pt[0].x; x<src_pt[1].x; x++) {                                
                                 if(fitting_data[x]!= (uchar)0) {
+                                        // if(!dst.empty()){
+                                        //         if(abs(dst[dst.size()-1].x - x) > 10 || abs(dst[dst.size()-1].y - y)>10){
+                                        //                 break; 
+                                        //         }
+                                        //         else{
+                                        //                 dst.push_back(cv::Point(x,y));
+                                        //         }
+                                        // }///////////////////////////////////////////////////////////////////고쳐
+ 
+                                        // else{
+                                        //         dst.push_back(cv::Point(x,y));
+                                        // }
+                                        
+                                        // pre_x_pt = x;
+                                        // pre_y_pt = y;
+                                        // break;
+                                        // if(!recently_right_fitting_vec.empty() && first_fit_y == -1){
+                                        //         for(int i = 0; i<)                                                
+                                        // }
+                                        //if(recently_right_fitting_vec[i])
+                                        // if(y > 170 && y<180){
+                                                
+                                        // }
+                                        // dst.push_back(cv::Point(x,y));
+                                        // break;
+                                        ////*?...왜한거지//
                                         if(x == src_pt[0].x){
                                                 int my_sum = 0;
                                                 for(int i = x; i<x+10; i++){
@@ -2461,17 +2523,19 @@ bool InitImgObjectforROS::setMyLaneFitting(cv::Mat& src_img, std::vector<cv::Poi
                                                 }
                                                 if(my_sum > 5){
                                                        dst.push_back(cv::Point(x,y));
-                                                       if(dst.size()>20){
+                                                       break;
+                                                       if(dst.size()>10){///////////////////////////////////////수정함
                                                                return true; 
                                                        }        
                                                 }
-                                        }
+                                         }
                                         dst.push_back(cv::Point(x,y));
                                         break;
                                 }
                         }
                 }
-                if(dst.size()<10) return_val = false;
+                if(dst.size()<=10) return_val = false;
+                //else return_val = true;
                 //if(!dst.empty()){
                         // for(uint i = 0; i<dst.size()-1; i++){
                         //         if(abs(dst[i].x - dst[i+1].x)>10){
@@ -2514,7 +2578,7 @@ bool InitImgObjectforROS::setMyLaneFitting(cv::Mat& src_img, std::vector<cv::Poi
                                 if(fitting_data[x]!= (uchar)0) {
                                         dst.push_back(cv::Point(x,y));
                                         int i = x, width_sum = 0, no_point = 0;
-                                        while(no_point < 4){   
+                                        while(no_point < 3){   
                                                 if(i >= src_pt[1].x-1){
                                                         lane_width.push_back(width_sum);
                                                         my_sum += width_sum;
@@ -2559,20 +2623,20 @@ bool InitImgObjectforROS::setMyLaneFitting(cv::Mat& src_img, std::vector<cv::Poi
                                 
                         }
                         std::vector<cv::Point> dot_interval;
-                        if(l_slope >= r_slope){
+                        //if(l_slope >= r_slope){
                                 //check lane interval(dot lane characteristic is regular interval)
                                 for(uint i = 0; i<dst.size()-1; i++){
-                                        if(abs(dst[i].y - dst[i+1].y)>6){
+                                        if(abs(dst[i].y - dst[i+1].y)>=5 && abs(dst[i].x - dst[i+1].x)<17){
                                                 
                                                 change_check_y++;
                                                 //std::cout<<"                            dst["<<i<<"] : "<<dst[i]<<", ";
                                                 //std::cout<<"dst["<<i+1<<"] : "<<dst[i+1]<<std::endl;
                                         } 
                                 }
-                        }
-                        else{
-                                return_val = false;
-                        }
+                        // }
+                        // else{
+                        //         return_val = false;
+                        // }
                         if(change_check_y >= 3){
                                 //checking dot lane width is reliable
                                 int reliability = 0;
@@ -3119,7 +3183,7 @@ int InitImgObjectforROS::slopeCheck(cv::Mat &src, std::vector<cv::Point> lane_da
                         return 1;
                 }
                 else if(interval1 <= interval2 && interval2 <= interval3){
-                        if(interval1 - interval2 < 10 && interval2 - interval3 <10){
+                        if(abs(interval1 - interval2) < 10 && abs(interval2 - interval3) <10){
                                 cv::putText(src, "go staight", center_right, 
                                 cv::FONT_HERSHEY_SIMPLEX, 0.5, cv::Scalar(5,25,155), 2);
                                 cv::putText(src, std::to_string(interval1), cv::Point(src.cols/2 + 40, src.rows/2+100), 
@@ -3217,7 +3281,7 @@ void InitImgObjectforROS::calSlope(cv::Mat &src, std::vector<cv::Point> lane_dat
 
 bool InitImgObjectforROS::detectBlockingBar(cv::Mat src){
         int first_red = -1, last_red = -1, red_sum = 0, no_pt = 0, red_cnt = 0, stop = 0;
-        for(int y = 0; y<100; y++){//blockbar roi
+        for(int y = 0; y<60; y++){//blockbar roi
                 uchar* red_data = src.ptr<uchar>(y);
                 no_pt = 0;
                 for(int x = 0; x<src.cols; x++){
@@ -3259,6 +3323,32 @@ bool InitImgObjectforROS::detectBlockingBar(cv::Mat src){
         else return false;
 }
 
+void InitImgObjectforROS::setRoi(const string &lane_name, cv::Mat& dst){
+        if(lane_name == "left"){
+                for(int y = dst.rows-1; y>0; y--){
+                        uchar* delete_data = dst.ptr<uchar>(y);
+                        for(int x = 0; x<dst.cols; x++){
+                                if(y>170 || y < 160){
+                                        if(delete_data[x] != (uchar)0){
+                                                delete_data[x] = (uchar)0;
+                                        }         
+                                }
+                        }
+                }
+        }
+        else if(lane_name == "right"){
+                for(int y = dst.rows-1; y>0; y--){
+                        uchar* delete_data = dst.ptr<uchar>(y);
+                        for(int x = 0; x<dst.cols; x++){
+                                if(y>170 || y < 160){
+                                        if(delete_data[x] != (uchar)0){
+                                                delete_data[x] = (uchar)0;
+                                        }         
+                                }
+                        }
+                }
+        }
+}
 
 int main(int argc, char **argv){
         ros::init(argc, argv, "lane_detection");
@@ -3279,7 +3369,7 @@ int main(int argc, char **argv){
                 else if(groupName == "right")
                         video_right.open("/home/seuleee/Desktop/autorace_video_src/0717/right_record.avi",cv::VideoWriter::fourcc('X','V','I','D'),fps,cv::Size(640/2,480/2), isColor);
                 else if(groupName == "main")
-                        video_main.open("/home/seuleee/Desktop/autorace_video_src/0810/main_record.avi",cv::VideoWriter::fourcc('X','V','I','D'),fps,cv::Size(640/2,480/2), isColor);
+                        video_main.open("/home/seuleee/Desktop/autorace_video_src/0816/main_record.avi",cv::VideoWriter::fourcc('X','V','I','D'),fps,cv::Size(640/2,480/2), isColor);
         }
         
         while(img_obj.nh.ok()) {
@@ -3394,3 +3484,122 @@ void InitImgObjectforROS::setMyHSVTrackbarValue_old(const string &trackbar_name,
                  }
 }
 
+/*if(curve_mode){
+                                switch (curve_stage){
+                                case 0: //left_turn by right line
+                                        goal_array.data.clear();
+                                        goal_array.data.resize(0);
+                                        x_goal_ = 0;
+                                        y_goal_ = 0;
+                                        goal_array.data.push_back(x_goal_); //linear_vel아님 정확힌 직진방향 x목표점임. 속도변수따로만들기
+                                        goal_array.data.push_back(y_goal_);
+                                        curve_stage = 1; 
+                                        go_cnt = 0;
+                                        break;
+                                case 1:
+                                        goal_array.data.clear();
+                                        goal_array.data.resize(0);
+                                        x_goal_ = 0;
+                                        y_goal_ = 0;
+                                        goal_array.data.push_back(x_goal_); //linear_vel아님 정확힌 직진방향 x목표점임. 속도변수따로만들기
+                                        goal_array.data.push_back(y_goal_);
+                                        go_cnt++;
+                                        if (go_cnt > 10)
+                                        {
+                                                curve_stage = 2;
+                                                go_cnt = 0;
+                                        }
+                                        break;
+                                case 2:
+                                        goal_array.data.clear();
+                                        goal_array.data.resize(0);
+                                        x_goal_ = 0;
+                                        y_goal_ = 0.35;
+                                        goal_array.data.push_back(x_goal_); //linear_vel아님 정확힌 직진방향 x목표점임. 속도변수따로만들기
+                                        goal_array.data.push_back(y_goal_);
+                                        go_cnt++;
+                                        if (go_cnt > 15)
+                                        {
+                                                curve_stage = 3;
+                                                go_cnt = 0;
+                                        }
+                                        break;
+                                case 3:
+                                        goal_array.data.clear();
+                                        goal_array.data.resize(0);
+                                        x_goal_ = 0.08;
+                                        y_goal_ = 0;
+                                        goal_array.data.push_back(x_goal_); //linear_vel아님 정확힌 직진방향 x목표점임. 속도변수따로만들기
+                                        goal_array.data.push_back(y_goal_);
+                                        go_cnt++;
+                                        if (go_cnt > 5)
+                                        {
+                                                curve_stage = 4;
+                                                go_cnt = 0;
+                                        }
+                                        break;
+
+                                case 4:
+                                        curve_mode = false;
+                                        go_cnt = 0;
+                                        break;
+                                case 5: //left_turn by right line
+                                        goal_array.data.clear();
+                                        goal_array.data.resize(0);
+                                        x_goal_ = 0;
+                                        y_goal_ = 0;
+                                        goal_array.data.push_back(x_goal_); //linear_vel아님 정확힌 직진방향 x목표점임. 속도변수따로만들기
+                                        goal_array.data.push_back(y_goal_);
+                                        curve_stage = 6; 
+                                        go_cnt = 0;
+                                        break;
+                                case 6:
+                                        goal_array.data.clear();
+                                        goal_array.data.resize(0);
+                                        x_goal_ = 0;
+                                        y_goal_ = 0;
+                                        goal_array.data.push_back(x_goal_); //linear_vel아님 정확힌 직진방향 x목표점임. 속도변수따로만들기
+                                        goal_array.data.push_back(y_goal_);
+                                        go_cnt++;
+                                        if (go_cnt > 10)
+                                        {
+                                                curve_stage = 7;
+                                                go_cnt = 0;
+                                        }
+                                        break;
+                                case 7:
+                                        goal_array.data.clear();
+                                        goal_array.data.resize(0);
+                                        x_goal_ = 0.1;
+                                        y_goal_ = -0.35;
+                                        goal_array.data.push_back(x_goal_); //linear_vel아님 정확힌 직진방향 x목표점임. 속도변수따로만들기
+                                        goal_array.data.push_back(y_goal_);
+                                        go_cnt++;
+                                        if (go_cnt > 15)
+                                        {
+                                                curve_stage = 8;
+                                                go_cnt = 0;
+                                        }
+                                        break;
+                                case 8:
+                                        goal_array.data.clear();
+                                        goal_array.data.resize(0);
+                                        x_goal_ = 0.08;
+                                        y_goal_ = 0;
+                                        goal_array.data.push_back(x_goal_); //linear_vel아님 정확힌 직진방향 x목표점임. 속도변수따로만들기
+                                        goal_array.data.push_back(y_goal_);
+                                        go_cnt++;
+                                        if (go_cnt > 5)
+                                        {
+                                                curve_stage = 9;
+                                                go_cnt = 0;
+                                        }
+                                        break;
+
+                                case 9:
+                                        curve_mode = false;
+                                        go_cnt = 0;
+                                        break;
+                                                }
+
+                                        }*/

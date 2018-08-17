@@ -14,19 +14,19 @@
 			<param name="gazebo" value="0"/>
 			<param name="bird_eye_view" value="0"/>
 			<param name="auto_shot" value="0"/>
-			<param name="auto_record" value="0"/>
+			<param name="auto_record" value="1"/>
 			<param name="for_gui" value="0"/>
 			
 			<param name="reset_msg" value="0"/>
 			
 			<!-- <param name="left_min_interval" value="144"/> -->
-			<param name="left_min_interval" value="128"/>
+			<param name="left_min_interval" value="132"/>
 			<!-- <param name="left_max_interval" value="147"/> -->
 			<param name="left_max_interval" value="152"/>
 			<!-- <param name="right_min_interval" value="139"/> -->
-			<param name="right_min_interval" value="108"/>
+			<param name="right_min_interval" value="115"/>
 			<!-- <param name="right_max_interval" value="142"/> -->
-			<param name="right_max_interval" value="138"/>
+			<param name="right_max_interval" value="142"/>
 			<param name="right_rotation_y_goal" value="-0.1"/>
 			<param name="left_rotation_y_goal" value="0.1"/>
 			<param name="default_x_goal" value="0.05"/>
@@ -48,7 +48,7 @@
 			<param name="w_hmax" value="179"/>
 			<param name="w_smin" value="0"/>
 			<param name="w_smax" value="117"/>
-			<param name="w_vmin" value="255"/>
+			<param name="w_vmin" value="202"/>
 			<param name="w_vmax" value="255"/>
 
 

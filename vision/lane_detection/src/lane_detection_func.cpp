@@ -540,15 +540,24 @@ namespace lane_detect_algo{
                 // The 4 points that select quadilateral on the input , from top-left in clockwise order
                 // These four pts are the sides of the rect box used as input
                 
-                inputQuad[0] = cv::Point2f(0, dst.rows*0.85);
-                inputQuad[1] = cv::Point2f(dst.cols-1, dst.rows*0.85);
+                inputQuad[0] = cv::Point2f(50, dst.rows*0.5);
+                inputQuad[1] = cv::Point2f(dst.cols-1, dst.rows*0.5);
                 inputQuad[2] = cv::Point2f(dst.cols-1, dst.rows-1);
-                inputQuad[3] = cv::Point2f(0, dst.rows-1);
+                inputQuad[3] = cv::Point2f(dst.cols/2, dst.rows-20);
                 // The 4 points where the mapping is to be done , from top-left in clockwise order
                 outputQuad[0] = cv::Point2f(0, 0);
                 outputQuad[1] = cv::Point2f(dst.cols-1, 0);
-                outputQuad[2] = cv::Point2f(dst.cols*0.5, dst.rows - 1);
-                outputQuad[3] = cv::Point2f(dst.cols*0.2, dst.rows - 1);                
+                outputQuad[2] = cv::Point2f(dst.cols*0.4-50, dst.rows - 1);
+                outputQuad[3] = cv::Point2f(dst.cols*0.1, dst.rows - 20);  
+                // inputQuad[0] = cv::Point2f(0, dst.rows*0.85);
+                // inputQuad[1] = cv::Point2f(dst.cols-1, dst.rows*0.85);
+                // inputQuad[2] = cv::Point2f(dst.cols-1, dst.rows-1);
+                // inputQuad[3] = cv::Point2f(0, dst.rows-1);
+                // // The 4 points where the mapping is to be done , from top-left in clockwise order
+                // outputQuad[0] = cv::Point2f(0, 0);
+                // outputQuad[1] = cv::Point2f(dst.cols-1, 0);
+                // outputQuad[2] = cv::Point2f(dst.cols*0.5, dst.rows - 1);
+                // outputQuad[3] = cv::Point2f(dst.cols*0.2, dst.rows - 1);                
            
                 // // The 4 points where the mapping is to be done , from top-left in clockwise order
                 
@@ -618,9 +627,8 @@ namespace lane_detect_algo{
                 cv::Mat lambda(2, 4, CV_32FC1);
                 lambda = cv::Mat::zeros(src.rows, src.cols, src.type());
                 // Set the lambda matrix the same type and size as input
-                
-                inputQuad[0] = cv::Point2f(0, dst.rows*0.85);
-                inputQuad[1] = cv::Point2f(dst.cols-1, dst.rows*0.85);
+                inputQuad[0] = cv::Point2f(0, dst.rows*0.2);
+                inputQuad[1] = cv::Point2f(dst.cols-1, dst.rows*0.2);
                 inputQuad[2] = cv::Point2f(dst.cols-1, dst.rows-1);
                 inputQuad[3] = cv::Point2f(0, dst.rows-1);
                 // The 4 points where the mapping is to be done , from top-left in clockwise order
@@ -628,6 +636,15 @@ namespace lane_detect_algo{
                 outputQuad[1] = cv::Point2f(dst.cols-1, 0);
                 outputQuad[2] = cv::Point2f(dst.cols*0.5, dst.rows - 1);
                 outputQuad[3] = cv::Point2f(dst.cols*0.2, dst.rows - 1); 
+                // inputQuad[0] = cv::Point2f(0, dst.rows*0.85);
+                // inputQuad[1] = cv::Point2f(dst.cols-1, dst.rows*0.85);
+                // inputQuad[2] = cv::Point2f(dst.cols-1, dst.rows-1);
+                // inputQuad[3] = cv::Point2f(0, dst.rows-1);
+                // // The 4 points where the mapping is to be done , from top-left in clockwise order
+                // outputQuad[0] = cv::Point2f(0, 0);
+                // outputQuad[1] = cv::Point2f(dst.cols-1, 0);
+                // outputQuad[2] = cv::Point2f(dst.cols*0.5, dst.rows - 1);
+                // outputQuad[3] = cv::Point2f(dst.cols*0.2, dst.rows - 1); 
                 //5월 경기때꺼
                 // inputQuad[0] = cv::Point2f(0, dst.rows*0.35);
                 // inputQuad[1] = cv::Point2f(dst.cols-1, dst.rows*0.35);
