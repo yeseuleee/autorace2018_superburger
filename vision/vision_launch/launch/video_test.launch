@@ -19,10 +19,10 @@
 			
 			<param name="reset_msg" value="0"/>
 			
-			<param name="left_min_interval" value="138"/>
-			<param name="left_max_interval" value="156"/>
-			<param name="right_min_interval" value="139"/>
-			<param name="right_max_interval" value="150"/>
+			<param name="left_min_interval" value="90"/>
+			<param name="left_max_interval" value="110"/>
+			<param name="right_min_interval" value="95"/>
+			<param name="right_max_interval" value="132"/>
 			<param name="right_rotation_y_goal" value="-0.1"/>
 			<param name="left_rotation_y_goal" value="0.1"/>
 			<param name="default_x_goal" value="0.1"/>
@@ -45,11 +45,11 @@
 			<param name="w_vmin" value="239"/>
 			<param name="w_vmax" value="255"/>
 
-			<param name="r_hmin" value="160"/>
+			<param name="r_hmin" value="113"/>
 			<param name="r_hmax" value="179"/>
-			<param name="r_smin" value="0"/>
-			<param name="r_smax" value="63"/>
-			<param name="r_vmin" value="243"/>
+			<param name="r_smin" value="180"/>
+			<param name="r_smax" value="255"/>
+			<param name="r_vmin" value="122"/>
 			<param name="r_vmax" value="255"/>
 
 

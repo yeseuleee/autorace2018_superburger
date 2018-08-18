@@ -20,11 +20,11 @@
 			<param name="reset_msg" value="0"/>
 			
 			<!-- <param name="left_min_interval" value="144"/> -->
-			<param name="left_min_interval" value="132"/>
+			<param name="left_min_interval" value="122"/>
 			<!-- <param name="left_max_interval" value="147"/> -->
-			<param name="left_max_interval" value="152"/>
+			<param name="left_max_interval" value="142"/>
 			<!-- <param name="right_min_interval" value="139"/> -->
-			<param name="right_min_interval" value="115"/>
+			<param name="right_min_interval" value="100"/>
 			<!-- <param name="right_max_interval" value="142"/> -->
 			<param name="right_max_interval" value="142"/>
 			<param name="right_rotation_y_goal" value="-0.1"/>
@@ -51,13 +51,20 @@
 			<param name="w_vmin" value="202"/>
 			<param name="w_vmax" value="255"/>
 
-
-			<param name="r_hmin" value="133"/>
+			<!-- robotis -->
+			<param name="r_hmin" value="113"/>
+			<param name="r_hmax" value="179"/>
+			<param name="r_smin" value="180"/>
+			<param name="r_smax" value="255"/>
+			<param name="r_vmin" value="122"/>
+			<param name="r_vmax" value="255"/>
+			<!-- 학겨 -->
+			<!-- <param name="r_hmin" value="133"/>
 			<param name="r_hmax" value="179"/>
 			<param name="r_smin" value="31"/>
 			<param name="r_smax" value="255"/>
 			<param name="r_vmin" value="85"/>
-			<param name="r_vmax" value="255"/>
+			<param name="r_vmax" value="255"/> -->
 
 
 			<param name="r2_hmin" value="133"/>

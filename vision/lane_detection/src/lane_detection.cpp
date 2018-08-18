@@ -539,7 +539,7 @@ void InitImgObjectforROS::imgCb(const sensor_msgs::ImageConstPtr& img_msg){
                                         std::vector<cv::Point> left_roi_fitting_vec;
                                         for (int i = 0; i < left_lane_fitting.size(); i++)
                                         {
-                                                if (left_lane_fitting[i].y > 160 && left_lane_fitting[i].y < 170)
+                                                if (left_lane_fitting[i].y > 170 && left_lane_fitting[i].y < 180)
                                                 {
                                                         
                                                         //std::cout<<"\n\n @@@@left_lane start = "<<left_lane_fitting[i].x<<", "<<left_lane_fitting[i].y<<std::endl;
@@ -556,7 +556,7 @@ void InitImgObjectforROS::imgCb(const sensor_msgs::ImageConstPtr& img_msg){
                                         int left_pt_sum = 0, left_pt_avg = 0, left_pt_cnt = 0;
                                         for (int i = 0; i < left_lane_fitting.size(); i++)
                                         {
-                                                if (left_lane_fitting[i].y > 160 && left_lane_fitting[i].y < 170)
+                                                if (left_lane_fitting[i].y > 170 && left_lane_fitting[i].y < 180)
                                                 {
                                                         left_pt_sum += left_lane_fitting[i].x;
                                                         left_pt_cnt++;
@@ -571,7 +571,7 @@ void InitImgObjectforROS::imgCb(const sensor_msgs::ImageConstPtr& img_msg){
                                         }
                                         
                                         for(int i = 0; i<left_lane_fitting.size(); i++){
-                                                if (left_lane_fitting[i].y > 160 && left_lane_fitting[i].y < 170)
+                                                if (left_lane_fitting[i].y > 170 && left_lane_fitting[i].y < 180)
                                                 {
                                                         if(left_lane_fitting[i].x < left_pt_avg){
                                                                 left_roi_fitting_vec.push_back(left_lane_fitting[i]);
@@ -635,7 +635,7 @@ void InitImgObjectforROS::imgCb(const sensor_msgs::ImageConstPtr& img_msg){
                                         {
                                                 
                                                 //cv::polylines(gui_test,right_lane_fitting,0,cv::Scalar(200,100,23),2);
-                                                if (right_lane_fitting[i].y >= 170 && right_lane_fitting[i].y <= 180)
+                                                if (right_lane_fitting[i].y >= 180 && right_lane_fitting[i].y <= 190)
                                                 {
                                                         //cur_right = right_lane_fitting[i];
                                                        // std::cout<<"\n\n @@@@right_lane start = "<<right_lane_fitting[i].x<<", "<<right_lane_fitting[i].y<<std::endl;
@@ -647,7 +647,7 @@ void InitImgObjectforROS::imgCb(const sensor_msgs::ImageConstPtr& img_msg){
                                         int right_pt_sum = 0, right_pt_avg = 0, right_pt_cnt = 0;
                                         for (int i = 0; i < right_lane_fitting.size(); i++)
                                         {
-                                                if (right_lane_fitting[i].y >= 170 && right_lane_fitting[i].y <= 180)
+                                                if (right_lane_fitting[i].y >= 180 && right_lane_fitting[i].y <= 190)
                                                 {
                                                         right_pt_sum += right_lane_fitting[i].x;
                                                         right_pt_cnt++;
@@ -661,7 +661,7 @@ void InitImgObjectforROS::imgCb(const sensor_msgs::ImageConstPtr& img_msg){
                                                 right_pt_avg = right_pt_sum/right_pt_cnt;
                                         }
                                         for(int i = 0; i<right_lane_fitting.size(); i++){
-                                                if(right_lane_fitting[i].y >= 170 && right_lane_fitting[i].y <= 180){
+                                                if(right_lane_fitting[i].y >= 180 && right_lane_fitting[i].y <= 190){
                                                         if(right_lane_fitting[i].x < right_pt_avg){
                                                                 right_roi_fitting_vec.push_back(right_lane_fitting[i]);
                                 
@@ -725,7 +725,7 @@ void InitImgObjectforROS::imgCb(const sensor_msgs::ImageConstPtr& img_msg){
                                                 dot_cnt++;
                                                 std::cout << "###################################################################### dot" << std::endl;
                                         }
-                                        if (dot_cnt > 2)
+                                        if (dot_cnt >= 2)
                                         {
                                                 dot_cnt = -1;
                                                 parking_mode = true;
@@ -735,7 +735,7 @@ void InitImgObjectforROS::imgCb(const sensor_msgs::ImageConstPtr& img_msg){
                                 }
                                 else
                                 {
-                                        if(dot_cnt != -1) dot_cnt = 0;
+                                        //if(dot_cnt != -1) dot_cnt = 0;
                                 }
                         }
                         ///////**param goal test/////
@@ -805,18 +805,18 @@ void InitImgObjectforROS::imgCb(const sensor_msgs::ImageConstPtr& img_msg){
                                         { //** left lane tracking condition
                                                 if (left_interval <= left_min_interval)
                                                 { //need right rotation(ang_vel<0 : right rotation)
-                                                        if (abs(left_interval - left_min_interval) < 10)
+                                                        if (abs(left_interval - left_min_interval) < 15)
                                                                 y_goal_ = -0.05;
-                                                        else if (abs(left_interval - left_min_interval) >= 10 && abs(left_interval - left_min_interval) < 20)
+                                                        else if (abs(left_interval - left_min_interval) >= 15 && abs(left_interval - left_min_interval) < 30)
                                                                 y_goal_ = -0.1;
                                                         else
                                                                 y_goal_ = -0.15;
                                                 }
                                                 else
                                                 { //need left rotation(ang_vel>0 : left rotation)
-                                                        if (abs(left_interval - left_max_interval) < 10)
+                                                        if (abs(left_interval - left_max_interval) < 15)
                                                                 y_goal_ = 0.05;
-                                                        else if (abs(left_interval - left_max_interval) >= 10 && abs(left_interval - left_max_interval) < 20)
+                                                        else if (abs(left_interval - left_max_interval) >= 15 && abs(left_interval - left_max_interval) < 30)
                                                                 y_goal_ = 0.1;
                                                         else
                                                                 y_goal_ = 0.15;
@@ -833,44 +833,50 @@ void InitImgObjectforROS::imgCb(const sensor_msgs::ImageConstPtr& img_msg){
                                                 //** right lane tracking condition
                                                 if (right_interval <= right_min_interval)
                                                 { //need left rotation(ang_vel>0 : left rotation)
-                                                        if (abs(right_interval - right_min_interval) < 10)
+                                                        if (abs(right_interval - right_min_interval) < 15)
                                                                 y_goal_ += (float)0.05;
-                                                        else if (abs(right_interval - right_min_interval) >= 10 && abs(right_interval - right_min_interval) < 20)
+                                                        else if (abs(right_interval - right_min_interval) >= 15 && abs(right_interval - right_min_interval) < 30)
                                                                 y_goal_ += (float)0.1;
                                                         else
                                                                 y_goal_ += (float)0.15;
                                                 }
                                                 else
                                                 { //need right rotation(ang_vel<0 : right rotation)
-                                                        if (abs(right_interval - right_max_interval) < 10)
+                                                        if (abs(right_interval - right_max_interval) < 15)
                                                                 y_goal_ += (float)-0.05;
-                                                        else if (abs(right_interval - right_max_interval) >= 10 && abs(right_interval - right_max_interval) < 20)
+                                                        else if (abs(right_interval - right_max_interval) >= 15 && abs(right_interval - right_max_interval) < 50)
                                                                 y_goal_ += (float)-0.1;
                                                         else
                                                                 y_goal_ += (float)-0.15;
                                                 }
                                         }
 
-                                        if(left_roi_slope < 0 && right_roi_slope > 0){
-                                                if(abs(left_roi_slope + right_roi_slope) < 0.3){
-                                                        if(y_goal_ != 0) y_goal_ = 0;
-                                                }
-                                                else{
-                                                        if(left_roi_slope <= -1 && right_roi_slope < 0.4){
-                                                                if(y_goal_<0) y_goal_ = 0.23;
-                                                        }
-                                                   
-                                                }
-                                        }
-                                        else if(left_roi_slope>0 && right_roi_slope>0){
-                                                if(y_goal_ < 0.24) y_goal_ = 0.24;
-                                        }
-                                        else if(left_roi_slope<0 && right_roi_slope<0){
-                                                if(y_goal_ > -0.24) y_goal_ = -0.24;
-                                        }
-                                        else if(left_roi_slope > 0 && right_roi_slope < 0){
-                                                //hmm...
-                                        }
+                                        // if(left_roi_slope < 0 && right_roi_slope > 0){
+                                        //         if(left_roi_slope != -1.1){
+                                        //                 if (right_roi_slope < 0.3)
+                                        //                 {
+                                        //                         y_goal_ = 0.2;
+                                        //                 }
+                                        //                 else if(right_roi_slope >= 0.3 && right_roi_slope <0.5)
+                                        //                 {
+                                        //                         y_goal_ = 0.17;
+        
+                                        //                 }
+                                        //                 else{
+                                        //                         y_goal_ = 0.1;
+                                        //                 }
+                                        //         }
+                                                
+                                        // }
+                                        // else if(left_roi_slope>0 && right_roi_slope>0){
+                                        //         if(y_goal_ < 0.24) y_goal_ = 0.24;
+                                        // }
+                                        // else if(left_roi_slope<0 && right_roi_slope<0){
+                                        //         if(y_goal_ > -0.24) y_goal_ = -0.24;
+                                        // }
+                                        // else if(left_roi_slope > 0 && right_roi_slope < 0){
+                                        //         //hmm...
+                                        // }
 
                                 }
                                 else if(left_interval != -1 && right_interval == -1){
@@ -882,73 +888,73 @@ void InitImgObjectforROS::imgCb(const sensor_msgs::ImageConstPtr& img_msg){
                                         else{
                                                 //** left lane tracking condition
                                                 if(left_interval <= left_min_interval){//need right rotation(ang_vel<0 : right rotation)
-                                                        if(abs(left_interval - left_min_interval) <= 10) y_goal_ = -0.13;
-                                                        else if(abs(left_interval - left_min_interval) >= 10 && abs(left_interval - left_min_interval) < 20) y_goal_ = -0.2;
-                                                        else y_goal_ = -0.24;        
+                                                        if(abs(left_interval - left_min_interval) <= 15) y_goal_ = -0.13;
+                                                        else if(abs(left_interval - left_min_interval) >= 15 && abs(left_interval - left_min_interval) < 30) y_goal_ = -0.17;
+                                                        else y_goal_ = -0.21;        
                                                 }
                                                 else{//need left rotation(ang_vel>0 : left rotation)
-                                                        if(abs(left_interval - left_max_interval) <= 10) y_goal_ = 0.13;
-                                                        else if(abs(left_interval - left_max_interval) >= 10 && abs(left_interval - left_max_interval) < 20) y_goal_ = 0.2;
-                                                        else y_goal_ = 0.24;
+                                                        if(abs(left_interval - left_max_interval) <= 15) y_goal_ = 0.13;
+                                                        else if(abs(left_interval - left_max_interval) >= 15 && abs(left_interval - left_max_interval) < 30) y_goal_ = 0.17;
+                                                        else y_goal_ = 0.21;
                                                 }
                                         }
                                         int left_size = left_lane_fitting.size();
-                                        if(left_interval < 40){//|| left_size < 40){
+                                        if(left_interval < 30){//|| left_size < 40){
                                            //     x_goal_ = 0;
-                                                y_goal_ = -0.24;
+                                                y_goal_ = -0.21;
                                         }
                                         
-                                        if(left_roi_slope < 0 && right_roi_slope > 0){
-                                                if(abs(left_roi_slope + right_roi_slope) < 0.3){
-                                                        if(y_goal_ != 0) y_goal_ = 0;
-                                                }
-                                                else{
-                                                        //if(right_roi_slope >= 1){
-                                                        if(abs(left_interval - pre_left_interval) > 20 && abs(right_interval - pre_right_interval)>20){
-                                                                if(y_goal_<0) y_goal_ = 0.23;
-                                                        }
+                                        // if(left_roi_slope < 0 && right_roi_slope > 0){
+                                        //         if(abs(left_roi_slope + right_roi_slope) < 0.3){
+                                        //                 if(y_goal_ != 0) y_goal_ = 0;
+                                        //         }
+                                        //         else{
+                                        //                 //if(right_roi_slope >= 1){
+                                        //                 if(abs(left_interval - pre_left_interval) > 20 && abs(right_interval - pre_right_interval)>20){
+                                        //                         if(y_goal_<0) y_goal_ = 0.23;
+                                        //                 }
                                                                 
-                                                        //}   
-                                                }
-                                                // if(pre_left_roi_slope > 0 && pre_right_roi_slope > 0) y_goal_ = 0.24;
-                                                // else{
-                                                //         y_goal_ = prev_y_goal_; //left..right..?
-                                                // }
+                                        //                 //}   
+                                        //         }
+                                        //         // if(pre_left_roi_slope > 0 && pre_right_roi_slope > 0) y_goal_ = 0.24;
+                                        //         // else{
+                                        //         //         y_goal_ = prev_y_goal_; //left..right..?
+                                        //         // }
                                                 
-                                        }
-                                        else if(left_roi_slope>0 && right_roi_slope>0){
-                                                if(y_goal_ < 0.24) y_goal_ = 0.24;
-                                        }
-                                        else if(left_roi_slope<0 && right_roi_slope<0){
-                                                if(abs(left_lane_fitting.size() - pre_left_size) > 40){
-                                                        if(right_slope > 0) y_goal_ = 0.2;
-                                                }
-                                                else{
-                                                        if(left_interval < left_max_interval && left_interval > left_min_interval) y_goal_ = 0;
-                                                        else{
-                                                                if(y_goal_ > -0.24) y_goal_ = -0.14;
-                                                        }
+                                        // }
+                                        // else if(left_roi_slope>0 && right_roi_slope>0){
+                                        //         if(y_goal_ < 0.24) y_goal_ = 0.24;
+                                        // }
+                                        // else if(left_roi_slope<0 && right_roi_slope<0){
+                                        //         if(abs(left_lane_fitting.size() - pre_left_size) > 40){
+                                        //                 if(right_slope > 0) y_goal_ = 0.2;
+                                        //         }
+                                        //         else{
+                                        //                 if(left_interval < left_max_interval && left_interval > left_min_interval) y_goal_ = 0;
+                                        //                 else{
+                                        //                         if(y_goal_ > -0.24) y_goal_ = -0.14;
+                                        //                 }
                                                         
-                                                }
+                                        //         }
                                                 
-                                        }
-                                        else if(left_roi_slope > 0 && right_roi_slope < 0){
-                                              //  if(y_goal_ < 0.24) y_goal_ = 0.24;//?//....     
-                                        }
-                                        if(pre_right_interval != -1 && right_interval == -1){
-                                                if(pre_left_interval == -1 && left_interval != -1){
-                                                        y_goal_ = prev_y_goal_;
-                                                }
-                                        }
-                                        else if(pre_left_interval != -1 && left_interval == -1){
-                                                if(pre_right_interval == -1 && right_interval != -1){
-                                                        y_goal_ = prev_y_goal_;
-                                                }
-                                        }
-                                        if(left_slope == 1.1){
-                                                if(right_slope > 0.4) y_goal_ = 0.1;
-                                                else y_goal_ = 0.2;
-                                        }
+                                        // }
+                                        // else if(left_roi_slope > 0 && right_roi_slope < 0){
+                                        //       //  if(y_goal_ < 0.24) y_goal_ = 0.24;//?//....     
+                                        // }
+                                        // if(pre_right_interval != -1 && right_interval == -1){
+                                        //         if(pre_left_interval == -1 && left_interval != -1){
+                                        //                 y_goal_ = prev_y_goal_;
+                                        //         }
+                                        // }
+                                        // else if(pre_left_interval != -1 && left_interval == -1){
+                                        //         if(pre_right_interval == -1 && right_interval != -1){
+                                        //                 y_goal_ = prev_y_goal_;
+                                        //         }
+                                        // }
+                                        // if(left_slope == 1.1){
+                                        //         if(right_slope > 0.4) y_goal_ = 0.1;
+                                        //         else y_goal_ = 0.2;
+                                        // }
                                 }
                                 else if(left_interval == -1 && right_interval != -1){
                                         std::cout<<"case 3 : 'only right interval is not -1'\n pre left roi slope : "<<pre_left_roi_slope <<", left slope : "<<left_roi_slope
@@ -959,74 +965,90 @@ void InitImgObjectforROS::imgCb(const sensor_msgs::ImageConstPtr& img_msg){
                                         else{
                                                 //** right lane tracking condition
                                                 if(right_interval <= right_min_interval){//need left rotation(ang_vel>0 : left rotation)
-                                                        if(abs(right_interval - right_min_interval) <= 10) y_goal_ = 0.13;
-                                                        else if(abs(right_interval - right_min_interval) > 10 && abs(right_interval - right_min_interval) <= 20) y_goal_ = 0.2;
-                                                        else y_goal_ = 0.24;
+                                                        if(abs(right_interval - right_min_interval) <= 15) y_goal_ = 0.13;
+                                                        else if(abs(right_interval - right_min_interval) > 15 && abs(right_interval - right_min_interval) <= 30) y_goal_ = 0.17;
+                                                        else y_goal_ = 0.21;
                                                 }
                                                 else{//need right rotation(ang_vel<0 : right rotation)
-                                                        if(abs(right_interval - right_max_interval) <= 10) y_goal_ = -0.13;
-                                                        else if(abs(right_interval - right_max_interval) > 10 && abs(right_interval - right_max_interval) <= 20) y_goal_ = -0.2;
-                                                        else y_goal_ = -0.24;
+                                                        if(abs(right_interval - right_max_interval) <= 15) y_goal_ = -0.13;
+                                                        else if(abs(right_interval - right_max_interval) > 15 && abs(right_interval - right_max_interval) <= 30) y_goal_ = -0.17;
+                                                        else y_goal_ = -0.21;
                                                 }
                                         }
                                         int right_size = right_lane_fitting.size();
-                                        if(right_interval < 40){
+                                        if(right_interval < 30){
                                               //  x_goal_ = 0;
-                                                y_goal_ = 0.24;
+                                                y_goal_ = 0.21;
                                         }  
 
-                                        if(left_roi_slope < 0 && right_roi_slope > 0){
+                                        // if(left_roi_slope < 0 && right_roi_slope > 0){
 
-                                                if(abs(left_roi_slope + right_roi_slope) < 0.3){
-                                                        if(y_goal_ != 0) y_goal_ = 0;
-                                                }
-                                                else{
-                                                        if(left_roi_slope <= -1){
-                                                                if(y_goal_<0) {
-                                                                        if(right_interval > 0.4){
-                                                                                y_goal_ = 0.23;
-                                                                        }
-                                                                        else{
-                                                                                y_goal_ = 0.32;
-                                                                        }
+                                        //         if(abs(left_roi_slope + right_roi_slope) < 0.3){
+                                        //                 if(y_goal_ != 0) y_goal_ = 0;
+                                        //         }
+                                        //         else{
+                                        //                 if(left_roi_slope == -1.1){
+                                        //                         if(y_goal_<0) {
+                                        //                                 if(right_interval > 0.4){
+                                        //                                         if(right_interval < right_max_interval && right_interval > right_min_interval){
+                                        //                                                 y_goal_ = 0;
+                                        //                                         }
+                                        //                                         else
+                                        //                                         {
+                                        //                                                 if (right_interval <= right_min_interval)
+                                        //                                                 { //need left rotation(ang_vel>0 : left rotation)
+                                        //                                                         if (abs(right_interval - right_min_interval) <= 10)
+                                        //                                                                 y_goal_ = 0.13;
+                                        //                                                         else if (abs(right_interval - right_min_interval) > 10 && abs(right_interval - right_min_interval) <= 20)
+                                        //                                                                 y_goal_ = 0.2;
+                                        //                                                         else
+                                        //                                                                 y_goal_ = 0.24;
+                                        //                                                 }
+                                        //                                                 else
+                                        //                                                 { //need right rotation(ang_vel<0 : right rotation)
+                                        //                                                         if (abs(right_interval - right_max_interval) <= 10)
+                                        //                                                                 y_goal_ = -0.13;
+                                        //                                                         else if (abs(right_interval - right_max_interval) > 10 && abs(right_interval - right_max_interval) <= 20)
+                                        //                                                                 y_goal_ = -0.2;
+                                        //                                                         else
+                                        //                                                                 y_goal_ = -0.24;
+                                        //                                                 }
+                                        //                                         }
+                                                                               
+                                        //                                 }
+                                        //                                 else{
+                                        //                                         y_goal_ = 0.22;
+                                        //                                 }
                                                                                 
-                                                                }   
-                                                        }
-                                                }       
-                                                // if(pre_left_roi_slope > 0 && pre_right_roi_slope > 0) y_goal_ = 0.24;
-                                                // else{
-                                                //         y_goal_ = prev_y_goal_; //left..right..?
-                                                // }
-                                        }
-                                        else if(left_roi_slope>0 && right_roi_slope>0){
-                                                if(y_goal_ < 0.23) y_goal_ = 0.23;
-                                        }
-                                        else if(left_roi_slope<0 && right_roi_slope<0){
-                                                if(y_goal_ > -0.23) y_goal_ = -0.23;
-                                        }
-                                        else if(left_roi_slope > 0 && right_roi_slope < 0){
-                                              //  if(y_goal_ < 0.23) y_goal_ = 0.23;
-                                        }
+                                        //                         }   
+                                        //                 }
+                                        //         }       
+                                        //         // if(pre_left_roi_slope > 0 && pre_right_roi_slope > 0) y_goal_ = 0.24;
+                                        //         // else{
+                                        //         //         y_goal_ = prev_y_goal_; //left..right..?
+                                        //         // }
+                                        // }
+                                        // else if(left_roi_slope>0 && right_roi_slope>0){
+                                        //         if(y_goal_ < 0.23) y_goal_ = 0.23;
+                                        // }
+                                        // else if(left_roi_slope<0 && right_roi_slope<0){
+                                        //         if(y_goal_ > -0.23) y_goal_ = -0.23;
+                                        // }
+                                        // else if(left_roi_slope > 0 && right_roi_slope < 0){
+                                        //       //  if(y_goal_ < 0.23) y_goal_ = 0.23;
+                                        // }
                                 }
                                 else{
                                         std::cout<<"case 4: 'all intervals are -1'\n pre left roi slope : "<<pre_left_roi_slope <<", left slope : "<<left_roi_slope
                                         <<",\n pre right roi slope : "<<pre_right_roi_slope <<", right slope : "<<right_roi_slope<<std::endl;
-                                        if(prev_y_goal_ > -1 && prev_y_goal_ < 1){
-                                                 y_goal_ = prev_y_goal_;
-                                        }
+                                                // if(left_lane_fitting.size() < 20 && right_lane_fitting.size()<20){
+                                                //         //if(prev_y_goal_ > -1 && prev_y_goal_ < 1){
+                                                          y_goal_ = prev_y_goal_;
+                                                //         //}
+                                                // }
+                                                
 
-                                        // if(left_roi_slope < 0 && right_roi_slope > 0){
-
-                                        // }
-                                        // else if(left_roi_slope>0 && right_roi_slope>0){
-
-                                        // }
-                                        // else if(left_roi_slope<0 && right_roi_slope<0){
-
-                                        // }
-                                        // else if(left_roi_slope > 0 && right_roi_slope < 0){
-
-                                        // }
+                                       
                                        
                                 }
                                 // if(!left_lane_fitting.empty() && !right_lane_fitting.empty()){//tracking left lane(yellow lane)
@@ -2877,7 +2899,7 @@ bool InitImgObjectforROS::setMyLaneFitting(cv::Mat& src_img, std::vector<cv::Poi
                               } 
                         }
                 }  
-                if(change_check_y >= 3) {
+                if(change_check_y >= 2) {
                         
                         //std::cout<<"#########################################dot lane!!~~(right)"<<std::endl;//right만 지그재그일경우 거긴 점선임
                         //std::cout<<"dot : "<< src<<std::endl;
@@ -3280,6 +3302,51 @@ void InitImgObjectforROS::calSlope(cv::Mat &src, std::vector<cv::Point> lane_dat
 }
 
 bool InitImgObjectforROS::detectBlockingBar(cv::Mat src){
+        std::vector<std::vector<cv::Point>> countours;
+        std::vector<cv::Vec4i> hierachy;
+        cv::Mat dst = cv::Mat::zeros(src.size(), CV_8UC3);
+        cv::findContours(src,countours, hierachy, CV_RETR_LIST, CV_CHAIN_APPROX_SIMPLE, cv::Point(0, 0));
+        cv::Mat draw_lable = cv::Mat::zeros(src.size(), CV_8UC1);
+        for (std::vector<std::vector<cv::Point>>::size_type i = 0; i < countours.size(); ++i)
+        {
+                cv::drawContours(dst, countours, i, CV_RGB(255, 255, 255), -1, 8, hierachy, 0, cv::Point());
+        }
+        cv::cvtColor(dst, dst, cv::COLOR_BGR2GRAY); // Convert the image to Gray
+        cv::threshold(dst, dst, 127, 255, cv::THRESH_BINARY);
+      
+        cv::threshold(dst, draw_lable, 127, 255, cv::THRESH_BINARY_INV);
+        cv::Mat img_labels, stats, centroids;
+        int numOfLables = cv::connectedComponentsWithStats(dst, img_labels, stats, centroids, 8, CV_32S);
+        for (int row = 1; row < numOfLables; row++)
+        {
+                int *data = stats.ptr<int>(row);
+                int area = data[cv::CC_STAT_AREA];
+                int left = data[cv::CC_STAT_LEFT];
+                int top = data[cv::CC_STAT_TOP];
+                int width = data[cv::CC_STAT_WIDTH];
+                int height = data[cv::CC_STAT_HEIGHT];
+                if (area > 100 && area < 300)
+                {
+                        cv::rectangle(draw_lable, cv::Point(left, top), cv::Point(left + width, top + height), cv::Scalar(0, 0, 255), 1);
+                }
+                else
+                {
+                        cv::rectangle(draw_lable, cv::Point(left, top), cv::Point(left + width, top + height), cv::Scalar(0, 0, 255), 1);
+                        for (int row = top; row < top + height; row++)
+                        {
+                                uchar *data = dst.ptr<uchar>(row);
+                                for (int col = left; col < left + width; col++)
+                                { 
+                                      //  data[col] = (uchar)0;
+                                        
+                                }
+                        }
+                }
+                cv::putText(draw_lable, std::to_string(area), cv::Point(left + 20, top + 20),
+                            cv::FONT_HERSHEY_SIMPLEX, 0.3, cv::Scalar(5, 25, 255), 2);
+                cv::imshow("red label", draw_lable);
+                cv::imshow("red data", dst);
+        }
         int first_red = -1, last_red = -1, red_sum = 0, no_pt = 0, red_cnt = 0, stop = 0;
         for(int y = 0; y<60; y++){//blockbar roi
                 uchar* red_data = src.ptr<uchar>(y);
@@ -3328,7 +3395,7 @@ void InitImgObjectforROS::setRoi(const string &lane_name, cv::Mat& dst){
                 for(int y = dst.rows-1; y>0; y--){
                         uchar* delete_data = dst.ptr<uchar>(y);
                         for(int x = 0; x<dst.cols; x++){
-                                if(y>170 || y < 160){
+                                if(y>170 || y < 180){
                                         if(delete_data[x] != (uchar)0){
                                                 delete_data[x] = (uchar)0;
                                         }         
@@ -3340,7 +3407,7 @@ void InitImgObjectforROS::setRoi(const string &lane_name, cv::Mat& dst){
                 for(int y = dst.rows-1; y>0; y--){
                         uchar* delete_data = dst.ptr<uchar>(y);
                         for(int x = 0; x<dst.cols; x++){
-                                if(y>170 || y < 160){
+                                if(y>180 || y < 190){
                                         if(delete_data[x] != (uchar)0){
                                                 delete_data[x] = (uchar)0;
                                         }         
