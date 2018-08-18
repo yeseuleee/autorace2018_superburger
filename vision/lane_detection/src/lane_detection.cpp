@@ -1720,6 +1720,7 @@ void InitImgObjectforROS::imgCb(const sensor_msgs::ImageConstPtr& img_msg){
                                                 if(go_cnt > 1){
                                                         parking_stage = 16;
                                                         go_cnt = 0;
+                                                        //
                                                 }
                                                 break;
                                         case 16: 
