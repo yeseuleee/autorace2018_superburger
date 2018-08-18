@@ -20,13 +20,13 @@
 			<param name="reset_msg" value="0"/>
 			
 			<!-- <param name="left_min_interval" value="144"/> -->
-			<param name="left_min_interval" value="122"/>
+			<param name="left_min_interval" value="100"/>
 			<!-- <param name="left_max_interval" value="147"/> -->
-			<param name="left_max_interval" value="142"/>
+			<param name="left_max_interval" value="138"/>
 			<!-- <param name="right_min_interval" value="139"/> -->
-			<param name="right_min_interval" value="100"/>
+			<param name="right_min_interval" value="95"/>
 			<!-- <param name="right_max_interval" value="142"/> -->
-			<param name="right_max_interval" value="142"/>
+			<param name="right_max_interval" value="138"/>
 			<param name="right_rotation_y_goal" value="-0.1"/>
 			<param name="left_rotation_y_goal" value="0.1"/>
 			<param name="default_x_goal" value="0.05"/>
@@ -36,12 +36,12 @@
 
 			<param name="record_name" value="/home/seuleee/Desktop/autorace_video_src/0720/stop/1/main_record.avi"/>
 			<!--robotis-->
-			<param name="y_hmin" value="27"/>
-			<param name="y_hmax" value="54"/>
-			<param name="y_smin" value="20"/>
+			<param name="y_hmin" value="10"/>
+			<param name="y_hmax" value="40"/>
+			<param name="y_smin" value="83"/>
 			<!-- <param name="y_smax" value="141"/> -->
-			<param name="y_smax" value="108"/>
-			<param name="y_vmin" value="84"/>
+			<param name="y_smax" value="132"/>
+			<param name="y_vmin" value="9"/>
 			<param name="y_vmax" value="255"/>
 			<!-- <param name="w_hmin" value="95"/> -->
 			<param name="w_hmin" value="63"/>

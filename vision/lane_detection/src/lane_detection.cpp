@@ -126,7 +126,7 @@ float left_ang_vel, right_ang_vel;
 float x_goal_, y_goal_, prev_y_goal_;
 float left_theta = 0;
 float right_theta = 0;
-
+int zig_zag = 0;
 std::vector<int> right_doubling_vec, left_doubling_vec;
 int left_steer_avg = 999, right_steer_avg = 999;
 int pre_left_steer_avg = 999, pre_right_steer_avg = 999;
@@ -448,7 +448,8 @@ void InitImgObjectforROS::imgCb(const sensor_msgs::ImageConstPtr& img_msg){
                         box_pt_y.push_back(left_roi_b);
                         over_pt_y.push_back(cv::Point(left_roi_b.x - 10, left_roi_t.y));
                         over_pt_y.push_back(cv::Point(left_roi_b.x + 10, left_roi_b.y));
-                        yellow_labeling = yellow_canny.clone();
+                        //yellow_labeling = yellow_canny.clone();
+                        yellow_labeling = yellow_hsv.clone();
                         cv::Mat yellow_roi_origin = yellow_canny.clone();
                         //yellow_labeling = yellow_sobel.clone();
                         int white_valid;
@@ -459,6 +460,9 @@ void InitImgObjectforROS::imgCb(const sensor_msgs::ImageConstPtr& img_msg){
                         cv::Mat element(3,3,CV_8U,cv::Scalar(1)); 
                         cv::dilate(white_hsv,white_hsv,element);
                         cv::medianBlur(white_hsv, white_hsv, 1);
+                        
+                        cv::dilate(yellow_labeling,yellow_labeling,element);
+                        cv::medianBlur(yellow_labeling, yellow_labeling, 1);
                         cv::Mat white_roi_origin = white_hsv.clone();
                         cv::imshow("white_roi_origin",white_roi_origin);
                         cv::imshow("yellow_roi_origin",yellow_roi_origin);
@@ -498,7 +502,9 @@ void InitImgObjectforROS::imgCb(const sensor_msgs::ImageConstPtr& img_msg){
                         
                         if(setMyLaneFitting(yellow_labeling, box_pt_y, "left", left_lane_fitting)){                  
                              
-                                
+                                if(FittedLaneCheck(left_lane_fitting,"left") == 0){
+
+                                }
                         }
                         else{
                                 left_lane_fitting.clear();
@@ -539,7 +545,7 @@ void InitImgObjectforROS::imgCb(const sensor_msgs::ImageConstPtr& img_msg){
                                         std::vector<cv::Point> left_roi_fitting_vec;
                                         for (int i = 0; i < left_lane_fitting.size(); i++)
                                         {
-                                                if (left_lane_fitting[i].y > 170 && left_lane_fitting[i].y < 180)
+                                                if (left_lane_fitting[i].y > 180 && left_lane_fitting[i].y < 190)
                                                 {
                                                         
                                                         //std::cout<<"\n\n @@@@left_lane start = "<<left_lane_fitting[i].x<<", "<<left_lane_fitting[i].y<<std::endl;
@@ -556,7 +562,7 @@ void InitImgObjectforROS::imgCb(const sensor_msgs::ImageConstPtr& img_msg){
                                         int left_pt_sum = 0, left_pt_avg = 0, left_pt_cnt = 0;
                                         for (int i = 0; i < left_lane_fitting.size(); i++)
                                         {
-                                                if (left_lane_fitting[i].y > 170 && left_lane_fitting[i].y < 180)
+                                                if (left_lane_fitting[i].y > 180 && left_lane_fitting[i].y < 190)
                                                 {
                                                         left_pt_sum += left_lane_fitting[i].x;
                                                         left_pt_cnt++;
@@ -571,7 +577,7 @@ void InitImgObjectforROS::imgCb(const sensor_msgs::ImageConstPtr& img_msg){
                                         }
                                         
                                         for(int i = 0; i<left_lane_fitting.size(); i++){
-                                                if (left_lane_fitting[i].y > 170 && left_lane_fitting[i].y < 180)
+                                                if (left_lane_fitting[i].y > 180 && left_lane_fitting[i].y < 190)
                                                 {
                                                         if(left_lane_fitting[i].x < left_pt_avg){
                                                                 left_roi_fitting_vec.push_back(left_lane_fitting[i]);
@@ -725,7 +731,7 @@ void InitImgObjectforROS::imgCb(const sensor_msgs::ImageConstPtr& img_msg){
                                                 dot_cnt++;
                                                 std::cout << "###################################################################### dot" << std::endl;
                                         }
-                                        if (dot_cnt >= 2)
+                                        if (dot_cnt >= 3)
                                         {
                                                 dot_cnt = -1;
                                                 parking_mode = true;
@@ -746,10 +752,10 @@ void InitImgObjectforROS::imgCb(const sensor_msgs::ImageConstPtr& img_msg){
                         
                         //left와 right인터벌을 뽑아내는 벡터 위치를 보정할지 말지 결정하자.
                         if(normal_mode){
-                                x_goal_ = 0.08;
+                                x_goal_ = 0.1;
                                 y_goal_ = 0.0;
                                 double tmp = 0.0;
-                                if (pre_left_roi_slope != -999.9)
+                                if (pre_left_roi_slope != -999.9 || left_roi_slope != -1.1)
                                 {
                                         if ((pre_left_roi_slope < 0 && left_roi_slope > 0) || (pre_left_roi_slope > 0 && left_roi_slope < 0))
                                         {
@@ -761,15 +767,15 @@ void InitImgObjectforROS::imgCb(const sensor_msgs::ImageConstPtr& img_msg){
                                                 {
                                                         tmp = pre_left_roi_slope - left_roi_slope;
                                                 }
-                                                if (tmp > 0.4)
+                                                if (tmp > 0.6)
                                                 {
-                                                        left_roi_slope = pre_left_roi_slope;
+                                                      //  left_roi_slope = pre_left_roi_slope;
                                                 }
                                         }
                                 }
 
                                 tmp = 0.0;
-                                if (pre_right_roi_slope != -999.9)
+                                if (pre_right_roi_slope != -999.9 || right_roi_slope != 1.1)
                                 {
                                         if ((pre_right_roi_slope < 0 && right_roi_slope > 0) || (pre_right_roi_slope > 0 && right_roi_slope < 0))
                                         {
@@ -781,9 +787,9 @@ void InitImgObjectforROS::imgCb(const sensor_msgs::ImageConstPtr& img_msg){
                                                 {
                                                         tmp = pre_right_roi_slope - right_roi_slope;
                                                 }
-                                                if (tmp > 0.4)
+                                                if (tmp > 0.6)
                                                 {
-                                                        right_roi_slope = pre_right_roi_slope;
+                                                       // right_roi_slope = pre_right_roi_slope;
                                                 }
                                         }
                                 }
@@ -850,33 +856,54 @@ void InitImgObjectforROS::imgCb(const sensor_msgs::ImageConstPtr& img_msg){
                                                                 y_goal_ += (float)-0.15;
                                                 }
                                         }
+                                        if(right_roi_slope > 0 && left_roi_slope > 0){
+                                                y_goal_ = 0.2;
+                                        }
+                                        if (left_roi_slope <= -1)
+                                        {
+                                                // if (y_goal_ < 0)
+                                                // {
+                                                // if(right_roi_slope >= 0.6){
+                                                //         y_goal_ = 0.1;
+                                                // }
+                                                // else if(right_roi_slope < 0.6 && right_roi_slope >= 0.5){
+                                                //         y_goal_ = 0.12;
+                                                // }
+                                                // else if (right_roi_slope< 0.5 && right_roi_slope >= 0.4)
+                                                // {
 
-                                        // if(left_roi_slope < 0 && right_roi_slope > 0){
-                                        //         if(left_roi_slope != -1.1){
-                                        //                 if (right_roi_slope < 0.3)
-                                        //                 {
-                                        //                         y_goal_ = 0.2;
-                                        //                 }
-                                        //                 else if(right_roi_slope >= 0.3 && right_roi_slope <0.5)
-                                        //                 {
-                                        //                         y_goal_ = 0.17;
-        
-                                        //                 }
-                                        //                 else{
-                                        //                         y_goal_ = 0.1;
-                                        //                 }
-                                        //         }
-                                                
-                                        // }
-                                        // else if(left_roi_slope>0 && right_roi_slope>0){
-                                        //         if(y_goal_ < 0.24) y_goal_ = 0.24;
-                                        // }
-                                        // else if(left_roi_slope<0 && right_roi_slope<0){
-                                        //         if(y_goal_ > -0.24) y_goal_ = -0.24;
-                                        // }
-                                        // else if(left_roi_slope > 0 && right_roi_slope < 0){
-                                        //         //hmm...
-                                        // }
+                                                //         y_goal_ = 0.15;
+                                                // }
+                                                // else if (right_roi_slope < 0.4 && right_roi_slope >=0.3)
+                                                // {
+                        
+                                                //         y_goal_ = 0.19;
+                                                // }
+                                                // else if(right_roi_slope < 0.3 && right_roi_slope >0.2){
+                                                //         y_goal_ = 0.25;
+                                                // }
+                                                // else{
+                                                //         y_goal_ = 0.27;
+                                                // }
+                                                //}
+                                        }
+                                        if(pre_left_interval == -1 && left_interval > 40){
+                                                if(right_roi_slope > 0){
+                                                  //      y_goal_ = 0.27;
+                                                }
+                                        }
+                                        if(left_roi_slope == -1.1 && right_roi_slope == 1.1){
+                                                if(prev_y_goal_ > 0){
+                                                        //right_roi_slope = 0.3;
+                                                     //   y_goal_ = 0.3;
+                                                }
+                                        }
+                                        if(right_lane_fitting.size()>50){
+                                                if(left_roi_slope > 0 && right_roi_slope < 0){
+                                                        y_goal_ = 0.23;
+                                                }
+                                        }
+                                        
 
                                 }
                                 else if(left_interval != -1 && right_interval == -1){
@@ -901,9 +928,53 @@ void InitImgObjectforROS::imgCb(const sensor_msgs::ImageConstPtr& img_msg){
                                         int left_size = left_lane_fitting.size();
                                         if(left_interval < 30){//|| left_size < 40){
                                            //     x_goal_ = 0;
-                                                y_goal_ = -0.21;
+                                              //  y_goal_ = -0.21;
                                         }
-                                        
+                                        // if (right_interval < 50 || right_slope < 0.4)
+                                        // {
+                                        //         if (left_roi_slope <= -1.1)
+                                        //         {
+                                        //                 // if (y_goal_ < 0)
+                                        //                 // {
+                                        //                 if (right_roi_slope >= 0.6)
+                                        //                 {
+                                        //                         y_goal_ = 0;
+                                        //                 }
+                                        //                 else if (right_roi_slope < 0.6 && right_roi_slope >= 0.5)
+                                        //                 {
+                                        //                         y_goal_ = 0.12;
+                                        //                 }
+                                        //                 else if (right_roi_slope < 0.5 && right_roi_slope >= 0.4)
+                                        //                 {
+
+                                        //                         y_goal_ = 0.15;
+                                        //                 }
+                                        //                 else if (right_roi_slope < 0.4 && right_roi_slope >= 0.3)
+                                        //                 {
+
+                                        //                         y_goal_ = 0.19;
+                                        //                 }
+                                        //                 else if (right_roi_slope < 0.3 && right_roi_slope > 0.2)
+                                        //                 {
+                                        //                         y_goal_ = 0.25;
+                                        //                 }
+                                        //                 else
+                                        //                 {
+                                        //                         y_goal_ = 0.27;
+                                        //                 }
+                                                       
+                                                
+                                        //         }
+                                        //         if(right_roi_slope >0 && left_roi_slope > 0){
+                                        //                 y_goal_ = 0.2;
+                                        //         }
+                                        // }
+                                        if(pre_left_interval == -1 && left_interval > 40){
+                                                if(right_roi_slope > 0){
+                                                     //   y_goal_ = 0.27;
+                                                }
+                                        }
+
                                         // if(left_roi_slope < 0 && right_roi_slope > 0){
                                         //         if(abs(left_roi_slope + right_roi_slope) < 0.3){
                                         //                 if(y_goal_ != 0) y_goal_ = 0;
@@ -955,6 +1026,17 @@ void InitImgObjectforROS::imgCb(const sensor_msgs::ImageConstPtr& img_msg){
                                         //         if(right_slope > 0.4) y_goal_ = 0.1;
                                         //         else y_goal_ = 0.2;
                                         // }
+                                        if(right_roi_slope > 0 && left_roi_slope > 0){
+                                                y_goal_ = 0.2;
+                                        }
+                                        else if(right_roi_slope <0 && right_roi_slope > 0){
+                                                if(right_lane_fitting.size()>60){
+                                                        y_goal_ = 0.3;
+                                                }
+                                        }
+                                         else if(left_roi_slope < 0 && right_roi_slope < 0){
+                                                y_goal_ = -0.3;
+                                        }
                                 }
                                 else if(left_interval == -1 && right_interval != -1){
                                         std::cout<<"case 3 : 'only right interval is not -1'\n pre left roi slope : "<<pre_left_roi_slope <<", left slope : "<<left_roi_slope
@@ -976,80 +1058,120 @@ void InitImgObjectforROS::imgCb(const sensor_msgs::ImageConstPtr& img_msg){
                                                 }
                                         }
                                         int right_size = right_lane_fitting.size();
-                                        if(right_interval < 30){
-                                              //  x_goal_ = 0;
-                                                y_goal_ = 0.21;
-                                        }  
+                                        if (right_size<50 )
+                                        {
+                              
+                                        if (left_roi_slope <= -1.1)
+                                        {
+                                                // if (y_goal_ < 0)
+                                                // {
+                                                if (right_roi_slope >= 0.6)
+                                                {
+                                                        y_goal_ = 0;
+                                                }
+                                                else if (right_roi_slope < 0.6 && right_roi_slope >= 0.5)
+                                                {
+                                                        y_goal_ = 0.12;
+                                                }
+                                                else if (right_roi_slope < 0.5 && right_roi_slope >= 0.4)
+                                                {
 
-                                        // if(left_roi_slope < 0 && right_roi_slope > 0){
+                                                        y_goal_ = 0.15;
+                                                }
+                                                else if (right_roi_slope < 0.4 && right_roi_slope >= 0.3)
+                                                {
 
-                                        //         if(abs(left_roi_slope + right_roi_slope) < 0.3){
-                                        //                 if(y_goal_ != 0) y_goal_ = 0;
-                                        //         }
-                                        //         else{
-                                        //                 if(left_roi_slope == -1.1){
-                                        //                         if(y_goal_<0) {
-                                        //                                 if(right_interval > 0.4){
-                                        //                                         if(right_interval < right_max_interval && right_interval > right_min_interval){
-                                        //                                                 y_goal_ = 0;
-                                        //                                         }
-                                        //                                         else
-                                        //                                         {
-                                        //                                                 if (right_interval <= right_min_interval)
-                                        //                                                 { //need left rotation(ang_vel>0 : left rotation)
-                                        //                                                         if (abs(right_interval - right_min_interval) <= 10)
-                                        //                                                                 y_goal_ = 0.13;
-                                        //                                                         else if (abs(right_interval - right_min_interval) > 10 && abs(right_interval - right_min_interval) <= 20)
-                                        //                                                                 y_goal_ = 0.2;
-                                        //                                                         else
-                                        //                                                                 y_goal_ = 0.24;
-                                        //                                                 }
-                                        //                                                 else
-                                        //                                                 { //need right rotation(ang_vel<0 : right rotation)
-                                        //                                                         if (abs(right_interval - right_max_interval) <= 10)
-                                        //                                                                 y_goal_ = -0.13;
-                                        //                                                         else if (abs(right_interval - right_max_interval) > 10 && abs(right_interval - right_max_interval) <= 20)
-                                        //                                                                 y_goal_ = -0.2;
-                                        //                                                         else
-                                        //                                                                 y_goal_ = -0.24;
-                                        //                                                 }
-                                        //                                         }
-                                                                               
-                                        //                                 }
-                                        //                                 else{
-                                        //                                         y_goal_ = 0.22;
-                                        //                                 }
-                                                                                
-                                        //                         }   
-                                        //                 }
-                                        //         }       
-                                        //         // if(pre_left_roi_slope > 0 && pre_right_roi_slope > 0) y_goal_ = 0.24;
-                                        //         // else{
-                                        //         //         y_goal_ = prev_y_goal_; //left..right..?
-                                        //         // }
-                                        // }
-                                        // else if(left_roi_slope>0 && right_roi_slope>0){
-                                        //         if(y_goal_ < 0.23) y_goal_ = 0.23;
-                                        // }
-                                        // else if(left_roi_slope<0 && right_roi_slope<0){
-                                        //         if(y_goal_ > -0.23) y_goal_ = -0.23;
-                                        // }
-                                        // else if(left_roi_slope > 0 && right_roi_slope < 0){
-                                        //       //  if(y_goal_ < 0.23) y_goal_ = 0.23;
-                                        // }
+                                                        y_goal_ = 0.19;
+                                                }
+                                                else if (right_roi_slope < 0.3 && right_roi_slope > 0.2)
+                                                {
+                                                        y_goal_ = 0.25;
+                                                }
+                                                else
+                                                {
+                                                        y_goal_ = 0.27;
+                                                }
+                                        }
+                                                // if(abs(right_interval - pre_right_size) > 40){
+                                                //         y_goal_ = 0.2;  
+                                                // }
+                                        }
+                                        if(pre_left_interval == -1 && left_interval > 40){
+                                                if(right_roi_slope > 0){
+                                                      //  y_goal_ = 0.27;
+                                                }
+                                        }
+                                        
+                                        if(left_roi_slope == -1.1 && right_roi_slope == 1.1){
+                                                if(prev_y_goal_ > 0){
+                                                        //right_roi_slope = 0.3;
+                                                      //  y_goal_ = 0.3;
+                                                }
+                                        }
+                                        if(right_lane_fitting.size()>50){
+                                                if(left_roi_slope > 0 && right_roi_slope < 0){
+                                                        y_goal_ = 0.23;
+                                                }
+                                        }
+        
                                 }
                                 else{
                                         std::cout<<"case 4: 'all intervals are -1'\n pre left roi slope : "<<pre_left_roi_slope <<", left slope : "<<left_roi_slope
                                         <<",\n pre right roi slope : "<<pre_right_roi_slope <<", right slope : "<<right_roi_slope<<std::endl;
-                                                // if(left_lane_fitting.size() < 20 && right_lane_fitting.size()<20){
-                                                //         //if(prev_y_goal_ > -1 && prev_y_goal_ < 1){
-                                                          y_goal_ = prev_y_goal_;
-                                                //         //}
-                                                // }
-                                                
+                                               
+                                        
+                                        if(left_roi_slope == -1.1 && right_roi_slope == 1.1){
+                                                if(prev_y_goal_ > 0){
+                                                        //right_roi_slope = 0.3;
+                                                        y_goal_ = 0.3;
+                                                }
+                                        }
+                                        if (left_roi_slope <= -1.1 && right_roi_slope > 0)
+                                        {
+                                                // if (y_goal_ < 0)
+                                                // {
+                                                if (right_roi_slope >= 0.6)
+                                                {
+                                                        y_goal_ = 0;
+                                                }
+                                                else if (right_roi_slope < 0.6 && right_roi_slope >= 0.5)
+                                                {
+                                                        y_goal_ = 0.12;
+                                                }
+                                                else if (right_roi_slope < 0.5 && right_roi_slope >= 0.4)
+                                                {
 
-                                       
-                                       
+                                                        y_goal_ = 0.15;
+                                                }
+                                                else if (right_roi_slope < 0.4 && right_roi_slope >= 0.3)
+                                                {
+
+                                                        y_goal_ = 0.19;
+                                                }
+                                                else if (right_roi_slope < 0.3 && right_roi_slope > 0.2)
+                                                {
+                                                        y_goal_ = 0.25;
+                                                }
+                                                else
+                                                {
+                                                        y_goal_ = 0.27;
+                                                }
+                                        }
+                                        if(left_slope > 0 && right_slope > 0){
+                                                y_goal_ = 0.23;
+                                        }
+                                        else{
+                                                y_goal_ = prev_y_goal_;
+                                        }
+                                        if(left_roi_slope == -1.1 && right_roi_slope == 1.1){
+                                                if(prev_y_goal_ >= 0){
+                                                        //right_roi_slope = 0.3;
+                                                        y_goal_ = 0.3;
+                                                }
+                                        }
+                                        else if(left_roi_slope < 0 && right_roi_slope < 0){
+                                                y_goal_ = -0.3;
+                                        }
                                 }
                                 // if(!left_lane_fitting.empty() && !right_lane_fitting.empty()){//tracking left lane(yellow lane)
                                 //         int left_size = left_lane_fitting.size(), right_size = right_lane_fitting.size();
@@ -1235,7 +1357,18 @@ void InitImgObjectforROS::imgCb(const sensor_msgs::ImageConstPtr& img_msg){
                                 //         //         y_goal_ = 0;
                                 //         // }
                                 // }
-                                        
+
+                                // if((prev_y_goal_ > 0 && y_goal_ < 0)||(prev_y_goal_ < 0 && y_goal_ > 0)){
+                                //         if(left_roi_slope == pre_left_roi_slope && pre_right_roi_slope == right_roi_slope){
+                                //                 y_goal_ = prev_y_goal_;
+                                //         }
+                                // }
+                                if(blocking_bar_checked){
+                                        y_goal_ = 0;
+                                        if(right_interval < right_min_interval) y_goal_ = -0.1;
+                                        else if(right_interval > right_max_interval) y_goal_ = 0.1;
+                                }
+
                                 std::cout<<"x_goal_ : "<<x_goal_<<std::endl;
                                 std::cout<<"y_goal_ : "<<y_goal_<<std::endl;
                                 std::cout<<"right_interval : "<<right_interval<<std::endl;
@@ -1268,6 +1401,7 @@ void InitImgObjectforROS::imgCb(const sensor_msgs::ImageConstPtr& img_msg){
                         if(parking_mode && !blocking_bar_mode && !signal_lamp_mode && !tunnel_mode){
                                 
                                 cv::Mat parked = origin_white_hsv.clone();
+                                
                                 cv::Mat park_zero = cv::Mat::zeros(origin_white_hsv.size(), CV_8UC1);
                                 switch (parking_stage)
                                 {
@@ -1279,7 +1413,7 @@ void InitImgObjectforROS::imgCb(const sensor_msgs::ImageConstPtr& img_msg){
                                                 goal_array.data.push_back(x_goal_);//linear_vel아님 정확힌 직진방향 x목표점임. 속도변수따로만들기
                                                 goal_array.data.push_back(y_goal_);
                                                 go_cnt++;
-                                                if(left_lane_fitting.size() < 50){
+                                                if(left_slope < 0 && left_lane_fitting.size() < 20){
                                                         goal_array.data.clear();
                                                         goal_array.data.resize(0);
                                                         x_goal_ = 0;
@@ -1287,7 +1421,7 @@ void InitImgObjectforROS::imgCb(const sensor_msgs::ImageConstPtr& img_msg){
                                                         goal_array.data.push_back(x_goal_);//linear_vel아님 정확힌 직진방향 x목표점임. 속도변수따로만들기
                                                         goal_array.data.push_back(y_goal_);
                                                 }
-                                                else if(left_lane_fitting.size()>=50){
+                                                else if(left_slope < 0 && left_lane_fitting.size() >= 20){
                                                         goal_array.data.clear();
                                                         goal_array.data.resize(0);
                                                         x_goal_ = 0;
@@ -1302,12 +1436,12 @@ void InitImgObjectforROS::imgCb(const sensor_msgs::ImageConstPtr& img_msg){
                                         case 1: 
                                                 goal_array.data.clear();
                                                 goal_array.data.resize(0);
-                                                x_goal_ = 0;
+                                                x_goal_ = 0.1;
                                                 y_goal_ = 0;
                                                 goal_array.data.push_back(x_goal_);//linear_vel아님 정확힌 직진방향 x목표점임. 속도변수따로만들기
                                                 goal_array.data.push_back(y_goal_);
                                                 go_cnt++;
-                                                if(go_cnt > 2){
+                                                if(go_cnt > 6){
                                                         parking_stage = 2;
                                                         go_cnt = 0;
                                                 }
@@ -1329,11 +1463,11 @@ void InitImgObjectforROS::imgCb(const sensor_msgs::ImageConstPtr& img_msg){
                                                 goal_array.data.clear();
                                                 goal_array.data.resize(0);
                                                 x_goal_ = 0;
-                                                y_goal_ = -0.25;
+                                                y_goal_ = -0.45;
                                                 goal_array.data.push_back(x_goal_);//linear_vel아님 정확힌 직진방향 x목표점임. 속도변수따로만들기
                                                 goal_array.data.push_back(y_goal_);
                                                 go_cnt++;
-                                                if(go_cnt > 30){
+                                                if(go_cnt > 16){
                                                         parking_stage = 4;
                                                         go_cnt = 0;
                                                 }
@@ -1419,10 +1553,10 @@ void InitImgObjectforROS::imgCb(const sensor_msgs::ImageConstPtr& img_msg){
                                                 break;
                                         case 6://first parking area
                                                 {
-                                                if(go_cnt<33){
+                                                if(go_cnt<17){
                                                         goal_array.data.clear();
                                                         goal_array.data.resize(0);
-                                                        x_goal_ = 0.05;
+                                                        x_goal_ = 0.1;
                                                         y_goal_ = 0;
                                                         goal_array.data.push_back(x_goal_);//linear_vel아님 정확힌 직진방향 x목표점임. 속도변수따로만들기
                                                         goal_array.data.push_back(y_goal_);
@@ -1444,7 +1578,7 @@ void InitImgObjectforROS::imgCb(const sensor_msgs::ImageConstPtr& img_msg){
                                                 break;
                                         case 7 ://first parking area
                                                 {
-                                                if(go_cnt<5){
+                                                if(go_cnt<1){
                                                         goal_array.data.clear();
                                                         goal_array.data.resize(0);
                                                         x_goal_ = 0;
@@ -1468,10 +1602,10 @@ void InitImgObjectforROS::imgCb(const sensor_msgs::ImageConstPtr& img_msg){
                                                 }
                                                 break;        
                                         case 8 :
-                                                if(go_cnt<28){
+                                                if(go_cnt<14){
                                                         goal_array.data.clear();
                                                         goal_array.data.resize(0);
-                                                        x_goal_ = -0.05;
+                                                        x_goal_ = -0.1;
                                                         y_goal_ = 0;
                                                         goal_array.data.push_back(x_goal_);//linear_vel아님 정확힌 직진방향 x목표점임. 속도변수따로만들기
                                                         goal_array.data.push_back(y_goal_);
@@ -1497,7 +1631,7 @@ void InitImgObjectforROS::imgCb(const sensor_msgs::ImageConstPtr& img_msg){
                                                 goal_array.data.push_back(x_goal_);//linear_vel아님 정확힌 직진방향 x목표점임. 속도변수따로만들기
                                                 goal_array.data.push_back(y_goal_);
                                                 go_cnt++;
-                                                if(go_cnt > 10){
+                                                if(go_cnt > 2){
 
                                                         parking_stage = 10;
                                                         go_cnt = 0;
@@ -1507,11 +1641,11 @@ void InitImgObjectforROS::imgCb(const sensor_msgs::ImageConstPtr& img_msg){
                                                 goal_array.data.clear();
                                                 goal_array.data.resize(0);
                                                 x_goal_ = 0;
-                                                y_goal_ = 0.25;
+                                                y_goal_ = 0.45;
                                                 goal_array.data.push_back(x_goal_);//linear_vel아님 정확힌 직진방향 x목표점임. 속도변수따로만들기
                                                 goal_array.data.push_back(y_goal_);
                                                 go_cnt++;
-                                                if(go_cnt > 30 && left_lane_fitting.size() > 40){
+                                                if(go_cnt > 16){
 
                                                         parking_stage = 11;
                                                         go_cnt = 0;
@@ -1525,18 +1659,22 @@ void InitImgObjectforROS::imgCb(const sensor_msgs::ImageConstPtr& img_msg){
                                                 goal_array.data.push_back(x_goal_);//linear_vel아님 정확힌 직진방향 x목표점임. 속도변수따로만들기
                                                 goal_array.data.push_back(y_goal_);
                                                 go_cnt++;
-                                                if(go_cnt < 20 && right_lane_fitting.size()>20){
-                                                     goal_array.data.clear();
-                                                        goal_array.data.resize(0);
-                                                        x_goal_ = 0.1;
-                                                        y_goal_ = 0;
-                                                        goal_array.data.push_back(x_goal_);//linear_vel아님 정확힌 직진방향 x목표점임. 속도변수따로만들기
-                                                        goal_array.data.push_back(y_goal_);   
-                                                }
-                                                else if(go_cnt >= 20 && right_lane_fitting.size()<=20){
-                                                        go_cnt = 0;
+                                                if(go_cnt > 2){
                                                         parking_stage = 12;
+                                                        go_cnt = 0;
                                                 }
+                                                // if(go_cnt < 20 && right_lane_fitting.size()>20){
+                                                //      goal_array.data.clear();
+                                                //         goal_array.data.resize(0);
+                                                //         x_goal_ = 0.1;
+                                                //         y_goal_ = 0;
+                                                //         goal_array.data.push_back(x_goal_);//linear_vel아님 정확힌 직진방향 x목표점임. 속도변수따로만들기
+                                                //         goal_array.data.push_back(y_goal_);   
+                                                // }
+                                                // else if(go_cnt >= 20 && right_lane_fitting.size()<=20){
+                                                //         go_cnt = 0;
+                                                //         parking_stage = 12;
+                                                // }
                                                 
                                                 break;
                                         case 12: 
@@ -1552,7 +1690,7 @@ void InitImgObjectforROS::imgCb(const sensor_msgs::ImageConstPtr& img_msg){
                                                 goal_array.data.push_back(x_goal_);//linear_vel아님 정확힌 직진방향 x목표점임. 속도변수따로만들기
                                                 goal_array.data.push_back(y_goal_);
                                                 go_cnt++;
-                                                if(go_cnt > 5){
+                                                if(go_cnt > 1){
                                                         parking_stage = 14;
                                                         go_cnt = 0;
                                                 }
@@ -1561,11 +1699,11 @@ void InitImgObjectforROS::imgCb(const sensor_msgs::ImageConstPtr& img_msg){
                                                 goal_array.data.clear();
                                                 goal_array.data.resize(0);
                                                 x_goal_ = 0;
-                                                y_goal_ = 0.25;
+                                                y_goal_ = 0.45;
                                                 goal_array.data.push_back(x_goal_);//linear_vel아님 정확힌 직진방향 x목표점임. 속도변수따로만들기
                                                 goal_array.data.push_back(y_goal_);
                                                 go_cnt++;
-                                                if(go_cnt > 30 && left_lane_fitting.size()>40){
+                                                if(go_cnt > 16){
 
                                                         parking_stage = 15;
                                                         go_cnt = 0;
@@ -1579,7 +1717,7 @@ void InitImgObjectforROS::imgCb(const sensor_msgs::ImageConstPtr& img_msg){
                                                 goal_array.data.push_back(x_goal_);//linear_vel아님 정확힌 직진방향 x목표점임. 속도변수따로만들기
                                                 goal_array.data.push_back(y_goal_);
                                                 go_cnt++;
-                                                if(go_cnt > 5){
+                                                if(go_cnt > 1){
                                                         parking_stage = 16;
                                                         go_cnt = 0;
                                                 }
@@ -1587,12 +1725,12 @@ void InitImgObjectforROS::imgCb(const sensor_msgs::ImageConstPtr& img_msg){
                                         case 16: 
                                                 goal_array.data.clear();
                                                 goal_array.data.resize(0);
-                                                x_goal_ = 0.05;
+                                                x_goal_ = 0.1;
                                                 y_goal_ = 0;
                                                 goal_array.data.push_back(x_goal_);//linear_vel아님 정확힌 직진방향 x목표점임. 속도변수따로만들기
                                                 goal_array.data.push_back(y_goal_);
                                                 go_cnt++;
-                                                if(go_cnt > 20 && left_lane_fitting.size()<60){
+                                                if(go_cnt > 18){
                                                         parking_stage = 17;
                                                         go_cnt = 0;
                                                 }
@@ -1614,11 +1752,11 @@ void InitImgObjectforROS::imgCb(const sensor_msgs::ImageConstPtr& img_msg){
                                                 goal_array.data.clear();
                                                 goal_array.data.resize(0);
                                                 x_goal_ = 0;
-                                                y_goal_ = -0.25;
+                                                y_goal_ = -0.45;
                                                 goal_array.data.push_back(x_goal_);//linear_vel아님 정확힌 직진방향 x목표점임. 속도변수따로만들기
                                                 goal_array.data.push_back(y_goal_);
                                                 go_cnt++;
-                                                if(go_cnt > 30){
+                                                if(go_cnt > 16){
                                                         parking_stage = 19;
                                                         go_cnt = 0;
                                                 }
@@ -1631,17 +1769,17 @@ void InitImgObjectforROS::imgCb(const sensor_msgs::ImageConstPtr& img_msg){
                                                 goal_array.data.push_back(x_goal_);//linear_vel아님 정확힌 직진방향 x목표점임. 속도변수따로만들기
                                                 goal_array.data.push_back(y_goal_);
                                                 go_cnt++;
-                                                if(go_cnt > 5){
+                                                if(go_cnt > 1){
                                                         parking_stage = 20;
                                                         go_cnt = 0;
                                                 }
                                                 break;
                                         case 20: 
                                                 {
-                                                if(go_cnt<33){
+                                                if(go_cnt<17){
                                                         goal_array.data.clear();
                                                         goal_array.data.resize(0);
-                                                        x_goal_ = 0.05;
+                                                        x_goal_ = 0.1;
                                                         y_goal_ = 0;
                                                         goal_array.data.push_back(x_goal_);//linear_vel아님 정확힌 직진방향 x목표점임. 속도변수따로만들기
                                                         goal_array.data.push_back(y_goal_);
@@ -1674,10 +1812,10 @@ void InitImgObjectforROS::imgCb(const sensor_msgs::ImageConstPtr& img_msg){
                                                 }
                                                 break;
                                         case 22:
-                                                if(go_cnt<28){
+                                                if(go_cnt<14){
                                                         goal_array.data.clear();
                                                         goal_array.data.resize(0);
-                                                        x_goal_ = -0.05;
+                                                        x_goal_ = -0.1;
                                                         y_goal_ = 0;
                                                         goal_array.data.push_back(x_goal_);//linear_vel아님 정확힌 직진방향 x목표점임. 속도변수따로만들기
                                                         goal_array.data.push_back(y_goal_);
@@ -1703,7 +1841,7 @@ void InitImgObjectforROS::imgCb(const sensor_msgs::ImageConstPtr& img_msg){
                                                 goal_array.data.push_back(x_goal_);//linear_vel아님 정확힌 직진방향 x목표점임. 속도변수따로만들기
                                                 goal_array.data.push_back(y_goal_);
                                                 go_cnt++;
-                                                if(go_cnt > 10){
+                                                if(go_cnt > 1){
 
                                                         parking_stage = 24;
                                                         go_cnt = 0;
@@ -1713,11 +1851,11 @@ void InitImgObjectforROS::imgCb(const sensor_msgs::ImageConstPtr& img_msg){
                                                 goal_array.data.clear();
                                                 goal_array.data.resize(0);
                                                 x_goal_ = 0;
-                                                y_goal_ = 0.25;
+                                                y_goal_ = 0.45;
                                                 goal_array.data.push_back(x_goal_);//linear_vel아님 정확힌 직진방향 x목표점임. 속도변수따로만들기
                                                 goal_array.data.push_back(y_goal_);
                                                 go_cnt++;
-                                                if(go_cnt > 30 && left_lane_fitting.size()>30){
+                                                if(go_cnt > 16){
 
                                                         parking_stage = 25;
                                                         go_cnt = 0;
@@ -1757,12 +1895,12 @@ void InitImgObjectforROS::imgCb(const sensor_msgs::ImageConstPtr& img_msg){
                                         case 0: 
                                                 goal_array.data.clear();
                                                 goal_array.data.resize(0);
-                                                x_goal_ = 0.05;
+                                                x_goal_ = 0.0;
                                                 y_goal_ = 0;
                                                 goal_array.data.push_back(x_goal_);//linear_vel아님 정확힌 직진방향 x목표점임. 속도변수따로만들기
                                                 goal_array.data.push_back(y_goal_);
                                                 go_cnt++;
-                                                if(go_cnt > 10){
+                                                if(go_cnt > 3){
                                                         blocking_bar_stage = 1;
                                                         go_cnt = 0;
                                                 }
@@ -1775,11 +1913,11 @@ void InitImgObjectforROS::imgCb(const sensor_msgs::ImageConstPtr& img_msg){
                                                 goal_array.data.push_back(x_goal_);//linear_vel아님 정확힌 직진방향 x목표점임. 속도변수따로만들기
                                                 goal_array.data.push_back(y_goal_);
                                                 go_cnt++;
-                                                if(go_cnt > 30 && !detectBlockingBar(red_hsv)){
+                                                if(go_cnt > 10 && !detectBlockingBar(red_hsv)){
                                                         blocking_bar_stage = 3;
                                                         go_cnt = 0;
                                                 }
-                                                else if(go_cnt > 30 && detectBlockingBar(red_hsv)){
+                                                else if(go_cnt > 10 && detectBlockingBar(red_hsv)){
                                                         blocking_bar_stage = 5;
                                                         go_cnt = 0;
                                                 }
@@ -2259,7 +2397,7 @@ void InitImgObjectforROS::setColorPreocessing(lane_detect_algo::CalLane callane,
                         callane.detectWhiteRange(bev,dst_g, g_hmin, g_hmax, g_smin, g_smax, g_vmin, g_vmax,0,0);
                         callane.detectWhiteRange(bev,dst_y2, y2_hmin, y2_hmax, y2_smin, y2_smax, y2_vmin, y2_vmax,0,0);
 
-                    //    cv::imshow(groupName+"_YELLOW_LANE_TRACKBAR",dst_y);
+                        cv::imshow(groupName+"_YELLOW_LANE_TRACKBAR",dst_y);
                         cv::imshow(groupName+"_WHITE_LANE_TRACKBAR",dst_w);
 
                         cv::imshow(groupName+"_BLOCKING_RED_TRACKBAR",dst_r);
@@ -2767,7 +2905,7 @@ bool InitImgObjectforROS::setMyLaneFitting(cv::Mat& src_img, std::vector<cv::Poi
                                 
                         }
                         if(change_check_x >=3 && max_x_tmp - min_x_tmp > 20) {
-                                //std::cout<<"ZigZag!!~~(left)"<<std::endl;//right만 지그재그일경우 거긴 점선임
+                                std::cout<<"ZigZag!!~~(left)"<<std::endl;//right만 지그재그일경우 거긴 점선임
                                 turn_value = 0;
                         }
                         else{
@@ -3436,7 +3574,7 @@ int main(int argc, char **argv){
                 else if(groupName == "right")
                         video_right.open("/home/seuleee/Desktop/autorace_video_src/0717/right_record.avi",cv::VideoWriter::fourcc('X','V','I','D'),fps,cv::Size(640/2,480/2), isColor);
                 else if(groupName == "main")
-                        video_main.open("/home/seuleee/Desktop/autorace_video_src/0816/main_record.avi",cv::VideoWriter::fourcc('X','V','I','D'),fps,cv::Size(640/2,480/2), isColor);
+                        video_main.open("/home/seuleee/Desktop/autorace_video_src/0818/blockingbar3.avi",cv::VideoWriter::fourcc('X','V','I','D'),fps,cv::Size(640/2,480/2), isColor);
         }
         
         while(img_obj.nh.ok()) {
