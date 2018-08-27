@@ -1,0 +1,52 @@
+
+
+			<param name="y_hmin" value="10"/>
+			<param name="y_hmax" value="40"/>
+			<param name="y_smin" value="83"/>
+			<param name="y_smax" value="132"/>
+			<param name="y_vmin" value="9"/>
+			<param name="y_vmax" value="255"/>
+	
+			<param name="w_hmin" value="63"/>
+			<param name="w_hmax" value="179"/>
+			<param name="w_smin" value="0"/>
+			<param name="w_smax" value="117"/>
+			<param name="w_vmin" value="202"/>
+			<param name="w_vmax" value="255"/>
+
+			<param name="r_hmin" value="113"/>
+			<param name="r_hmax" value="179"/>
+			<param name="r_smin" value="180"/>
+			<param name="r_smax" value="255"/>
+			<param name="r_vmin" value="122"/>
+			<param name="r_vmax" value="255"/>
+			<!-- 학겨 -->
+			<!-- <param name="r_hmin" value="133"/>
+			<param name="r_hmax" value="179"/>
+			<param name="r_smin" value="31"/>
+			<param name="r_smax" value="255"/>
+			<param name="r_vmin" value="85"/>
+			<param name="r_vmax" value="255"/> -->
+
+
+			<param name="r2_hmin" value="133"/>
+			<param name="r2_hmax" value="179"/>
+			<param name="r2_smin" value="31"/>
+			<param name="r2_smax" value="255"/>
+			<param name="r2_vmin" value="85"/>
+			<param name="r2_vmax" value="255"/>
+
+			<param name="g_hmin" value="65"/>
+			<param name="g_hmax" value="95"/>
+			<param name="g_smin" value="77"/>
+			<param name="g_smax" value="188"/>
+			<param name="g_vmin" value="87"/>
+			<param name="g_vmax" value="231"/>
+
+			<param name="y2_hmin" value="27"/>
+			<param name="y2_hmax" value="54"/>
+			<param name="y2_smin" value="20"/>
+			<param name="y2_smax" value="108"/>
+			<param name="y2_vmin" value="84"/>
+			<param name="y2_vmax" value="255"/>
+			
