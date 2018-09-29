@@ -1297,277 +1297,197 @@ namespace lane_detect_algo{
                 delete[] H_data;     
                 }
 
+                void CalLane::makeContoursLeftLane(cv::Mat src, cv::Mat &dst)
+                {
+                    std::vector<std::vector<cv::Point>> countours;
+                    std::vector<cv::Vec4i> hierachy;
+                    cv::Point pt_left_top, pt_right_bottom;
+                    std::vector<cv::Point> box_pt;
+                    int is_vaild = -1;
 
+                    cv::findContours(src, countours, hierachy, CV_RETR_LIST, CV_CHAIN_APPROX_SIMPLE, cv::Point(0, 0));
+                    dst = cv::Mat::zeros(src.size(), CV_8UC3);
 
-            int CalLane::makeContoursLeftLane(cv::Mat src, cv::Mat& dst) {
-                std::vector<std::vector<cv::Point>> countours;
-                std::vector<cv::Vec4i> hierachy;
-                cv::Point pt_left_top, pt_right_bottom;
-                std::vector<cv::Point> box_pt;
-                int is_vaild = -1;
-                
+                    for (std::vector<std::vector<cv::Point>>::size_type i = 0; i < countours.size(); ++i)
+                    {
+                        cv::drawContours(dst, countours, i, CV_RGB(255, 255, 255), -1, 8, hierachy, 0, cv::Point());
+                    }
+                    cv::cvtColor(dst, dst, cv::COLOR_BGR2GRAY); // Convert the image to Gray
+                    cv::threshold(dst, dst, 127, 255, cv::THRESH_BINARY);
+                    cv::Mat draw_lable;                                              
+                    cv::threshold(dst, draw_lable, 127, 255, cv::THRESH_BINARY_INV); 
+                    cv::Mat img_labels, stats, centroids;
+                    int numOfLables = cv::connectedComponentsWithStats(dst, img_labels, stats, centroids, 8, CV_32S);
 
-                //** set roi **//
-                for(int y = 0; y<src.rows/2 ; y++){
-                    uchar* none_roi_data = src.ptr<uchar>(y);
-                    for(int x = 0; x<src.cols; x++){
-                        if(none_roi_data[x] != (uchar)0){
-                            none_roi_data[x] = (uchar)0;
+                    int temp_area = 0, max_area = 0;
+                    for (int row = 1; row < numOfLables; row++)
+                    {
+                        int *area_data = stats.ptr<int>(row);
+                        temp_area = area_data[cv::CC_STAT_AREA];
+                        if (temp_area > max_area)
+                        {
+                            max_area = temp_area;
                         }
                     }
-                }
-                for(int y = 0; y<src.rows; y++){
-                    uchar* none_roi_data = src.ptr<uchar>(y);
-                    for(int x = src.cols/2; x<src.cols; x++){
-                        if(none_roi_data[x] != (uchar)0){
-                            none_roi_data[x] = (uchar)0;
-                        }
+
+                    int avg_area = 0, sum_area = 0;
+                    for (int row = 1; row < numOfLables; row++)
+                    {
+                        int *area_avg_data = stats.ptr<int>(row);
+                        sum_area += area_avg_data[cv::CC_STAT_AREA];
                     }
-                }
-                for(int y = src.rows/2 ; y<src.rows; y++){
-                    uchar* none_roi_data = src.ptr<uchar>(y);
-                    for(int x = 0; x<11; x++){
-                        if(none_roi_data[x] != (uchar)0){
-                            none_roi_data[x] = (uchar)0;
-                        }
+                    if (sum_area != 0)
+                    {
+                        avg_area = sum_area / numOfLables;
                     }
-                }
-                cv::findContours(src, countours, hierachy, CV_RETR_LIST, CV_CHAIN_APPROX_SIMPLE, cv::Point(0, 0));
-                dst = cv::Mat::zeros(src.size(), CV_8UC3);
 
-                for (std::vector<std::vector<cv::Point>>::size_type i = 0; i < countours.size(); ++i) {
-                    cv::drawContours(dst, countours, i, CV_RGB(255, 255, 255), -1, 8, hierachy, 0, cv::Point());
-                }
-                cv::cvtColor(dst, dst, cv::COLOR_BGR2GRAY);  // Convert the image to Gray
-                cv::threshold(dst, dst, 127, 255, cv::THRESH_BINARY);
-                cv::Mat draw_lable;//레이블확인용
-                cv::threshold(dst, draw_lable, 127, 255, cv::THRESH_BINARY_INV);//레이블 확인용
-                cv::Mat img_labels, stats, centroids;
-                int numOfLables = cv::connectedComponentsWithStats(dst, img_labels, stats, centroids, 8, CV_32S);
-
-               
-                int temp_area = 0, max_area = 0;
-                for (int row = 1; row < numOfLables; row++) {
-                    int* area_data = stats.ptr<int>(row);
-                    temp_area = area_data[cv::CC_STAT_AREA];
-                    if (temp_area > max_area) {
-                        max_area = temp_area;
-                    }
-                }
-
-                int avg_area = 0, sum_area = 0;
-                for (int row = 1; row < numOfLables; row++){
-                    int* area_avg_data = stats.ptr<int>(row);
-                    sum_area += area_avg_data[cv::CC_STAT_AREA];
-                }
-                if(sum_area != 0){
-                    avg_area = sum_area/numOfLables;
-                }
-                
-
-                int temp_height= 0, max_height = 0;
-                    for (int row = 1; row < numOfLables; row++) {
-                        int* height_data = stats.ptr<int>(row);
+                    int temp_height = 0, max_height = 0;
+                    for (int row = 1; row < numOfLables; row++)
+                    {
+                        int *height_data = stats.ptr<int>(row);
                         temp_height = height_data[cv::CC_STAT_HEIGHT];
-                        if (temp_height > max_height) {
-                        max_height = temp_height;
+                        if (temp_height > max_height)
+                        {
+                            max_height = temp_height;
                         }
                     }
-                int temp_bottom = 0, max_bottom = 0;
-                    for(int row = 1; row < numOfLables; row++){
-                    int* bottom_data = stats.ptr<int>(row);
-                    temp_bottom = bottom_data[cv::CC_STAT_TOP]+bottom_data[cv::CC_STAT_HEIGHT];
-                    if(temp_bottom>max_bottom){
-                        max_bottom = temp_bottom;
+                    int temp_bottom = 0, max_bottom = 0;
+                    for (int row = 1; row < numOfLables; row++)
+                    {
+                        int *bottom_data = stats.ptr<int>(row);
+                        temp_bottom = bottom_data[cv::CC_STAT_TOP] + bottom_data[cv::CC_STAT_HEIGHT];
+                        if (temp_bottom > max_bottom)
+                        {
+                            max_bottom = temp_bottom;
+                        }
                     }
-                }
-                int temp_right = 0, max_right = 0;
-                    for(int row = 1; row < numOfLables; row++){
-                    int* right_data = stats.ptr<int>(row);
-                    temp_right = right_data[cv::CC_STAT_LEFT]+right_data[cv::CC_STAT_WIDTH];
-                    if(temp_right>max_right){
-                        max_right = temp_right;
+                    int temp_right = 0, max_right = 0;
+                    for (int row = 1; row < numOfLables; row++)
+                    {
+                        int *right_data = stats.ptr<int>(row);
+                        temp_right = right_data[cv::CC_STAT_LEFT] + right_data[cv::CC_STAT_WIDTH];
+                        if (temp_right > max_right)
+                        {
+                            max_right = temp_right;
+                        }
                     }
-                }
-                int temp_top = 0, max_top = 0;
-			    for(int row = 1;  row < numOfLables; row++){
-		            int* top_data = stats.ptr<int>(row);
-		            temp_top = top_data[cv::CC_STAT_TOP];
-		            if(temp_top > max_top){
-		                max_top = temp_top;
-		            }
-		        }
-                for (int row = 1; row < numOfLables; row++) {
+                    int temp_top = 0, max_top = 0;
+                    for (int row = 1; row < numOfLables; row++)
+                    {
+                        int *top_data = stats.ptr<int>(row);
+                        temp_top = top_data[cv::CC_STAT_TOP];
+                        if (temp_top > max_top)
+                        {
+                            max_top = temp_top;
+                        }
+                    }
+                    for (int row = 1; row < numOfLables; row++)
+                    {
 
-                int* data = stats.ptr<int>(row);
-                int area = data[cv::CC_STAT_AREA];
-                int left = data[cv::CC_STAT_LEFT];
-                int top = data[cv::CC_STAT_TOP];
-                int width = data[cv::CC_STAT_WIDTH];
-                int height = data[cv::CC_STAT_HEIGHT];
+                        int *data = stats.ptr<int>(row);
+                        int area = data[cv::CC_STAT_AREA];
+                        int left = data[cv::CC_STAT_LEFT];
+                        int top = data[cv::CC_STAT_TOP];
+                        int width = data[cv::CC_STAT_WIDTH];
+                        int height = data[cv::CC_STAT_HEIGHT];
 
+                        cv::rectangle(draw_lable, cv::Point(left, top), cv::Point(left + width, top + height), cv::Scalar(0, 0, 255), 1);
+                        imshow("y_lable", draw_lable);
 
-                cv::rectangle(draw_lable,cv::Point(left,top),cv::Point(left+width,top+height),cv::Scalar(0,0,255),1);
-                //cv::putText(draw_lable, std::to_string(height), cv::Point(left+20,top+20), 
-                  //        FONT_HERSHEY_SIMPLEX, 1, Scalar(5,25,255), 2); 
-                imshow("y_lable", draw_lable);
-                
-              //-for max area and extra-//  if (area == max_area && width<height && left<src.cols / 2 && width<src.cols / 2) {//이 조건들에 추가조건 더해서 레이블 유효성 검사
-             //   if (left<src.cols*0.95 && width<src.cols*1.8/2){
-                //    imshow("y_lable", draw_lable);
-              //  if (area > avg_area && top + height == max_bottom){
-                  if (area > 10){
-                      if(height > 30) is_vaild++;
-                   // pt_left_top = cv::Point(left,top);
-                  //  pt_right_bottom = cv::Point(left+width,top+height);
-                    // if(left+width < src.cols*0.85){
-                    //     pt_right_bottom = cv::Point(left+(width/2),top+height);
-                    // }
-                    // else{
-                    //     pt_right_bottom = cv::Point(left+width,top+height);
-                    // }
-                    // if(top < src.rows*0.35){
-                    //     pt_left_top = cv::Point(left,top+(height/2));
-                    // }
-                    // else{
-                    //     pt_left_top = cv::Point(left,top);
-                    // }
-                    // //??//pt_right_bottom = cv::Point(pt_right_bottom.x,pt_left_top.y+height);
-                    //if(area>5 && max_bottom > 60){
-                      //  box_pt.push_back(pt_left_top);
-                      //  box_pt.push_back(pt_right_bottom);
-                    //}
-                    
-                    // if(left+width > src.cols/2 || top < src.rows/2){
-                    //             if(left+width > src.cols/2 && top < src.rows/2){
-                    //                 pt_left_top = cv::Point(left,top+(height/2));
-                    //                 pt_right_bottom = cv::Point(left+(width/2),top+height);
-                    //                 box_pt.push_back(pt_left_top);
-                    //                 box_pt.push_back(pt_right_bottom);
-                    //             }
-                    //             else if(left+width > src.cols/2){
-                    //                 pt_left_top = cv::Point(left,top+(height/2));
-                    //                 pt_right_bottom = cv::Point(left+width,top+height);
-                    //                 box_pt.push_back(pt_left_top);
-                    //                 box_pt.push_back(pt_right_bottom);
-                    //             }
-                    //             else if(top<src.rows/2){
-                    //                 pt_left_top = cv::Point(left,top);
-                    //                 pt_right_bottom = cv::Point(left+(width/2),top+height);
-                    //                 box_pt.push_back(pt_left_top);
-                    //                 box_pt.push_back(pt_right_bottom);
-                    //             }
-                    //         }
-                    //         else{
-                    //             pt_left_top = cv::Point(left,top);
-                    //             pt_right_bottom = cv::Point(left+width,top+height);
-                    //             box_pt.push_back(pt_left_top);
-                    //             box_pt.push_back(pt_right_bottom);
-                    //             //pt_right_bottop(left+width,top+height);
-                    //         }
-                //if (area == max_area && width<height && left<src.cols-100 && width<src.cols / 2){
-              //  if (abs(max_height - height)<100 && abs(max_bottom-(top+height))<50) {//이 조건들에 추가조건 더해서 레이블 유효성 검사
-                    int density = 0, my_area = 0;
-                    for(uint y = top+height; y>top; y--){
-                        uchar * delete_data = dst.ptr<uchar>(y);
-                        for(uint x = left+width; x>left; x--){
-                            if(delete_data[x] != 0){
-                                density++;
+                        if (area > 10)
+                        {
+                            if (height > 30)
+                                is_vaild++;
+                            int density = 0, my_area = 0;
+                            for (uint y = top + height; y > top; y--)
+                            {
+                                uchar *delete_data = dst.ptr<uchar>(y);
+                                for (uint x = left + width; x > left; x--)
+                                {
+                                    if (delete_data[x] != 0)
+                                    {
+                                        density++;
+                                    }
+                                    my_area++;
+                                }
                             }
-                            my_area++;
+                            //high density lable is nosie(not lane lable)
+                            if (density > my_area * 0.2)
+                            {
+                                for (uint y = top + height; y > top; y--)
+                                {
+                                    uchar *delete_data = dst.ptr<uchar>(y);
+                                    for (uint x = left + width; x > left; x--)
+                                    {
+                                        if (delete_data[x] != (uchar)0)
+                                        {
+                                            delete_data[x] = (uchar)0;
+                                        }
+                                    }
+                                }
+                            }
+
+                            for (int delete_row = dst.rows - 1; delete_row >= 0; --delete_row)
+                            {
+                                uchar *delete_data = dst.ptr<uchar>(delete_row);
+                                for (int delete_col = dst.cols - 1; delete_col >= 0; --delete_col)
+                                {
+                                    if ((delete_col > left + width || delete_col < left) || (delete_row < top || delete_row > top + height))
+                                    {
+                                        
+                                        //delete_data[delete_col] = (uchar)0;
+                                        
+                                        //***Should write exception code for overlab lable in real lable 
+                                    }
+                                }
+                            }
                         }
-                    }
-                    // if(area > 300){
-                    //      cv::putText(draw_lable, std::to_string(density), cv::Point(left+8,top-20), 
-                    //        FONT_HERSHEY_SIMPLEX, 0.3, Scalar(5,25,255), 1); 
-                    //  cv::putText(draw_lable, std::to_string(my_area), cv::Point(left+27,top-25), 
-                    //        FONT_HERSHEY_SIMPLEX, 0.3, Scalar(5,25,255), 1.3); 
-                    // }
-                    
-                    if(density > my_area*0.2){
-                        for(uint y = top+height; y>top; y--){
-                            uchar * delete_data = dst.ptr<uchar>(y);
-                            for(uint x = left+width; x>left; x--){
-                                if(delete_data[x] != (uchar)0){
-                                    delete_data[x] = (uchar)0;
+
+                        else
+                        { 
+                            for (int row = top; row < top + height; row++)
+                            {
+                                uchar *data = dst.ptr<uchar>(row);
+                                for (int col = left; col < left + width; col++)
+                                {
+                                    data[col] = (uchar)0;
                                 }
                             }
                         }
                     }
-
-                    for (int delete_row = dst.rows - 1; delete_row >= 0; --delete_row) {
-                        uchar* delete_data = dst.ptr<uchar>(delete_row);
-                        for (int delete_col = dst.cols-1; delete_col>=0; --delete_col) {
-
-
-                            if ((delete_col > left + width || delete_col < left) || (delete_row<top || delete_row>top + height)) {
-                                   // delete_data[delete_col] = (uchar)0;
-                            }
-
-                            // if ((delete_col > left + width || delete_col < left) ) {
-                            //     delete_data[delete_col] = (uchar)0;
-                            // }
-                        //else {//range of max lable box///////////////////////for visible center line////////////////////////////////////////////
-                        // if (delete_data[delete_col] != 0 && !lane_checked && coordi_index<dst.cols/2*3) {
-                        //  lane_checked = true;
-                        //  left_lane_first_coordi[coordi_index + coordi_offset] = (uint)delete_col;
-                        //  left_lane_first_coordi[coordi_index + coordi_offset + 1] = (uint)delete_row;
-                        //  int lane_width_check = 0;
-                        //  while (delete_data[delete_col - lane_width_check] != 0) {
-                        //   lane_width_check++;
-                        //  }
-                        //  left_lane_first_coordi[coordi_index + coordi_offset + 2] = lane_width_check;
-                        // }
-
-                        //}/////////////////////////////////////////////////////////////////////////////////
-                        }
-                    }
-                    
-                    
-                //box check
-                    //turn left
-                //for(int )/////////////////////////////////////////////////////////////
-                    //turn right/////////////////////짜야해!!!///////////////////////////
-                }/////////////////////////////////////////////////////////////////////////
-                
-                else {//delete wrong lable// 위에서 이미 유효 영역 바깥은 다 지우기때문에 얘는 필요 없다. 얘가 존재하면 오히려 이 비유효영역의 레이블이 유효영역을 침범해 그려진 경우 거길 지워버릴 수 있다.
-                    for (int row = top; row < top + height; row++) {
-                        uchar* data = dst.ptr<uchar>(row);
-                        for (int col = left; col < left + width; col++) {//1채널이라 (left+width)에 채널값 안곱함
-                            data[col] = (uchar)0; 
-
-                        }
-                    }
+                    //eturn is_vaild;
                 }
 
+            void CalLane::crosswalkCheck(cv::Mat)
+            {
 
-               // imshow("lane_left", dst);
-                }
-              //  imshow("drawing", draw_max_lable);//for visible lane max lable box
-              return is_vaild;
             }
-           void CalLane::crosswalkCheck(cv::Mat){
 
-           }
-
-           int CalLane::makeContoursRightLane(cv::Mat src, cv::Mat& dst){
+            void CalLane::makeContoursRightLane(cv::Mat src, cv::Mat &dst)
+            {
                 std::vector<std::vector<cv::Point>> countours;
                 std::vector<cv::Vec4i> hierachy;
                 cv::Point pt_left_top, pt_right_bottom;
                 std::vector<cv::Point> box_pt;
                 int is_vaild = -1;
-                for(int y = 0; y<src.rows/2 ; y++){
-                    uchar* none_roi_data = src.ptr<uchar>(y);
-                    for(int x = 0; x<src.cols; x++){
-                        if(none_roi_data[x] != (uchar)0){
+                for (int y = 0; y < src.rows / 2; y++)
+                {
+                    uchar *none_roi_data = src.ptr<uchar>(y);
+                    for (int x = 0; x < src.cols; x++)
+                    {
+                        if (none_roi_data[x] != (uchar)0)
+                        {
                             none_roi_data[x] = (uchar)0;
                         }
                     }
                 }
-                for(int y = 0; y<src.rows; y++){
-                    uchar* none_roi_data = src.ptr<uchar>(y);
-                    for(int x = 0; x < src.cols/2; x++){
-                        if(none_roi_data[x] != (uchar)0){
+                for (int y = 0; y < src.rows; y++)
+                {
+                    uchar *none_roi_data = src.ptr<uchar>(y);
+                    for (int x = 0; x < src.cols / 2; x++)
+                    {
+                        if (none_roi_data[x] != (uchar)0)
+                        {
                             none_roi_data[x] = (uchar)0;
                         }
                     }
@@ -1576,10 +1496,11 @@ namespace lane_detect_algo{
                 cv::findContours(src, countours, hierachy, CV_RETR_LIST, CV_CHAIN_APPROX_SIMPLE, cv::Point(0, 0));
                 dst = cv::Mat::zeros(src.size(), CV_8UC3);
 
-                for (std::vector<std::vector<cv::Point>>::size_type i = 0; i < countours.size(); ++i) {
+                for (std::vector<std::vector<cv::Point>>::size_type i = 0; i < countours.size(); ++i)
+                {
                     cv::drawContours(dst, countours, i, CV_RGB(255, 255, 255), -1, 8, hierachy, 0, cv::Point());
                 }
-                cv::cvtColor(dst, dst, cv::COLOR_BGR2GRAY);  // Convert the image to Gray
+                cv::cvtColor(dst, dst, cv::COLOR_BGR2GRAY); // Convert the image to Gray
                 cv::threshold(dst, dst, 127, 255, cv::THRESH_BINARY);
                 cv::Mat draw_lable;
 
@@ -1587,227 +1508,195 @@ namespace lane_detect_algo{
 
                 cv::Mat img_labels, stats, centroids;
                 int numOfLables = cv::connectedComponentsWithStats(dst, img_labels, stats, centroids, 8, CV_32S);
-                
-                int temp_area = 0, max_area = 0;
-                int* area_data;
-               
 
-                for (int row = 1; row < numOfLables; row++) {
+                int temp_area = 0, max_area = 0;
+                int *area_data;
+
+                for (int row = 1; row < numOfLables; row++)
+                {
                     area_data = stats.ptr<int>(row);
                     temp_area = area_data[cv::CC_STAT_AREA];
-                    if (temp_area > max_area) {
+                    if (temp_area > max_area)
+                    {
                         max_area = temp_area;
                     }
                 }
                 int avg_area = 0, sum_area = 0;
-                for (int row = 1; row < numOfLables; row++){
-                    int* area_avg_data = stats.ptr<int>(row);
+                for (int row = 1; row < numOfLables; row++)
+                {
+                    int *area_avg_data = stats.ptr<int>(row);
                     sum_area += area_avg_data[cv::CC_STAT_AREA];
                 }
-                if(sum_area != 0){
-                    avg_area = sum_area/numOfLables;
+                if (sum_area != 0)
+                {
+                    avg_area = sum_area / numOfLables;
                 }
 
-
-
                 //USE_MAX_HEIGHT
-                int temp_height= 0, max_height = 0;
-                for (int row = 1; row < numOfLables; row++) {
-                    int* height_data = stats.ptr<int>(row);
+                int temp_height = 0, max_height = 0;
+                for (int row = 1; row < numOfLables; row++)
+                {
+                    int *height_data = stats.ptr<int>(row);
                     temp_height = height_data[cv::CC_STAT_HEIGHT];
-                    if (temp_height > max_height) {
+                    if (temp_height > max_height)
+                    {
                         max_height = temp_height;
                     }
                 }
                 int temp_bottom = 0, max_bottom = 0;
-			    for(int row = 1;  row < numOfLables; row++){
-		            int* bottom_data = stats.ptr<int>(row);
-		            temp_bottom = bottom_data[cv::CC_STAT_TOP]+bottom_data[cv::CC_STAT_HEIGHT];
-		            if(temp_bottom>max_bottom){
-		                max_bottom = temp_bottom;
-		            }
-		        }
+                for (int row = 1; row < numOfLables; row++)
+                {
+                    int *bottom_data = stats.ptr<int>(row);
+                    temp_bottom = bottom_data[cv::CC_STAT_TOP] + bottom_data[cv::CC_STAT_HEIGHT];
+                    if (temp_bottom > max_bottom)
+                    {
+                        max_bottom = temp_bottom;
+                    }
+                }
                 int temp_top = 0, max_top = 0;
-			    for(int row = 1;  row < numOfLables; row++){
-		            int* top_data = stats.ptr<int>(row);
-		            temp_top = top_data[cv::CC_STAT_TOP];
-		            if(temp_top > max_top){
-		                max_top = temp_top;
-		            }
-		        }
+                for (int row = 1; row < numOfLables; row++)
+                {
+                    int *top_data = stats.ptr<int>(row);
+                    temp_top = top_data[cv::CC_STAT_TOP];
+                    if (temp_top > max_top)
+                    {
+                        max_top = temp_top;
+                    }
+                }
                 int temp_left = 0, max_left = 0;
-			    for(int row = 1;  row < numOfLables; row++){
-		            int* left_data = stats.ptr<int>(row);
-		            temp_left = left_data[cv::CC_STAT_TOP];
-		            if(temp_left > max_left){
-		                max_left = temp_left;
-		            }
-		        }
-                for (int row = 1; row < numOfLables; row++) {
+                for (int row = 1; row < numOfLables; row++)
+                {
+                    int *left_data = stats.ptr<int>(row);
+                    temp_left = left_data[cv::CC_STAT_TOP];
+                    if (temp_left > max_left)
+                    {
+                        max_left = temp_left;
+                    }
+                }
+                for (int row = 1; row < numOfLables; row++)
+                {
 
-                    int* data = stats.ptr<int>(row);
+                    int *data = stats.ptr<int>(row);
                     int area = data[cv::CC_STAT_AREA];
                     int left = data[cv::CC_STAT_LEFT];
                     int top = data[cv::CC_STAT_TOP];
                     int width = data[cv::CC_STAT_WIDTH];
                     int height = data[cv::CC_STAT_HEIGHT];
-                    cv::rectangle(draw_lable,cv::Point(left,top),cv::Point(left+width,top+height),cv::Scalar(0,0,255),1);
-                    cv::putText(draw_lable, std::to_string(area), cv::Point(left+20,top+20), 
-                          FONT_HERSHEY_SIMPLEX, 0.3, Scalar(5,25,255), 2); 
+                    cv::rectangle(draw_lable, cv::Point(left, top), cv::Point(left + width, top + height), cv::Scalar(0, 0, 255), 1);
+                    cv::putText(draw_lable, std::to_string(area), cv::Point(left + 20, top + 20),
+                                FONT_HERSHEY_SIMPLEX, 0.3, Scalar(5, 25, 255), 2);
                     cv::imshow("w_lable", draw_lable);
-                    //--for max area and extra//    if (area == max_area && width<height && left>src.cols / 3 && width<src.cols / 2) {//이 조건들에 추가조건 더해서 레이블 유효성 검사
-                        if(area > 10){
-                            is_vaild++;
-                            // if(left < src.cols*0.35){
-                            //     pt_left_top = cv::Point(left+(width/2),top);
-                            // }
-                            // else{
-                            //     pt_left_top = cv::Point(left,top);
-                            // }
-                            // if(top < src.rows*0.35){
-                            //     pt_left_top = cv::Point(pt_left_top.x,top+(height/2));
-                            // }
-                            // else{
-                            //     pt_left_top = cv::Point(pt_left_top.x,top);
-                            // }
-                            // pt_right_bottom = cv::Point(left+width,top+height);
-                           // if(area > 5 && max_bottom > 60){
-                               
-                           // }
 
-                        //??? ??? ???? ? ????
-                        // ???? ?? ???
-                        //???? ??? ??? ?
+                    if (area > 10)
+                    {
+                        //is_vaild++;
                         std::vector<int> lane_width;
                         int my_sum = 0, my_avg = 0, my_cnt = 0;
-                        //saving lane width & inner lane point 
-                        for(uint y = top + height; y > top; y--) {
-                                uchar* fill_data = dst.ptr<uchar>(y);
-                                for(uint x = left; x < (left+width); x++) {                                
-                                        if(fill_data[x]!= (uchar)0) {
-                                                int i = x, width_sum = 0,no_point = 0;
-                                                while(no_point<4){
-                                                    if(i >= (left + width -1) ){
-                                                        lane_width.push_back(width_sum);
-                                                        my_sum += width_sum;
-                                                        break;
-                                                    }
-                                                    if(fill_data[i] != (uchar)0){
-                                                        no_point = 0;
-                                                        width_sum++;
-                                                        i++;
-                                                    }
-                                                    else{
-                                                        no_point++;
-                                                        i++;
-                                                        width_sum++;
-                                                    }
-                                                }
-                                                if(width_sum > 4){
-                                                    lane_width.push_back(width_sum);
-                                                    my_sum += width_sum;
-                                                    my_cnt++;
-                                                }
-                                                break;
-                                                
+                        //saving lane width & inner lane point
+                        for (uint y = top + height; y > top; y--)
+                        {
+                            uchar *fill_data = dst.ptr<uchar>(y);
+                            for (uint x = left; x < (left + width); x++)
+                            {
+                                if (fill_data[x] != (uchar)0)
+                                {
+                                    int i = x, width_sum = 0, no_point = 0;
+                                    while (no_point < 4)
+                                    {
+                                        if (i >= (left + width - 1))
+                                        {
+                                            lane_width.push_back(width_sum);
+                                            my_sum += width_sum;
+                                            break;
                                         }
+                                        if (fill_data[i] != (uchar)0)
+                                        {
+                                            no_point = 0;
+                                            width_sum++;
+                                            i++;
+                                        }
+                                        else
+                                        {
+                                            no_point++;
+                                            i++;
+                                            width_sum++;
+                                        }
+                                    }
+                                    if (width_sum > 4)
+                                    {
+                                        lane_width.push_back(width_sum);
+                                        my_sum += width_sum;
+                                        my_cnt++;
+                                    }
+                                    break;
                                 }
+                            }
                         }
-                        if(!lane_width.empty() && my_cnt != 0){
+                        //**big lans width means noise**//
+                        if (!lane_width.empty() && my_cnt != 0)
+                        {
                             my_avg = my_sum / my_cnt;
                             int reliability = 0;
-                            for(int i = 0; i<lane_width.size(); i++){
-                                    if(abs(lane_width[i] - lane_width[i+1]) < 10){
-                                        reliability++;
-                                    }
-                                    else{
-                                        reliability--;
-                                    }
-                                    if(lane_width[i] > 30) reliability--; 
+                            for (int i = 0; i < lane_width.size(); i++)
+                            {
+                                if (abs(lane_width[i] - lane_width[i + 1]) < 10)
+                                {
+                                    reliability++;
+                                }
+                                else
+                                {
+                                    reliability--;
+                                }
+                                if (lane_width[i] > 30)
+                                    reliability--;
                             }
-                            if(reliability < 0){
-                                    for(uint y = top+height; y > top; y--){
-                                        uchar* delete_data = dst.ptr<uchar>(y);
-                                        for(uint x = left; x < (left+width); x++){
-                                            if(delete_data[x] != (uchar)0){
-                                                delete_data[x] = (uchar)0;
-                                            }
+                            if (reliability < 0)
+                            {
+                                for (uint y = top + height; y > top; y--)
+                                {
+                                    uchar *delete_data = dst.ptr<uchar>(y);
+                                    for (uint x = left; x < (left + width); x++)
+                                    {
+                                        if (delete_data[x] != (uchar)0)
+                                        {
+                                            delete_data[x] = (uchar)0;
                                         }
                                     }
-                            }
-                        }
-                        
-                                                
-                            // if(left < src.cols/2 || top < src.rows/2){
-                            //     if(left<src.cols/2 && top < src.rows/2){
-                            //         pt_left_top = cv::Point(left+(width/2),top+(height/2));
-                            //         pt_right_bottom = cv::Point(left+width,top+height);
-                            //         box_pt.push_back(pt_left_top);
-                            //         box_pt.push_back(pt_right_bottom);
-                            //     }
-                            //     else if(left<src.cols/2){
-                            //         pt_left_top = cv::Point(left,top+(height/2));
-                            //         pt_right_bottom = cv::Point(left+width,top+height);
-                            //         box_pt.push_back(pt_left_top);
-                            //         box_pt.push_back(pt_right_bottom);
-                            //     }
-                            //     else if(top<src.rows/2){
-                            //         pt_left_top = cv::Point(left+(width/2),top);
-                            //         pt_right_bottom = cv::Point(left+width,top+height);
-                            //         box_pt.push_back(pt_left_top);
-                            //         box_pt.push_back(pt_right_bottom);
-                            //     }
-                            // }
-                            // else{
-                            //     pt_left_top = cv::Point(left,top);
-                            //     pt_right_bottom = cv::Point(left+width,top+height);
-                            //     box_pt.push_back(pt_left_top);
-                            //     box_pt.push_back(pt_right_bottom);
-                            //     //pt_right_bottop(left+width,top+height);
-                            // }
-                        //if(abs(height - max_height)<100 && left<src.cols*1.8/2){
-                        //if(abs(max_height - height)<120 ) {//이 조건들에 추가조건 더해서 레이블 유효성 검사
-                            for (int delete_row = dst.rows-1; delete_row >= 0; --delete_row) {
-                                uchar* delete_data = dst.ptr<uchar>(delete_row);
-                                for (int delete_col = 0; delete_col < dst.cols; ++delete_col) {
-                                    if ((delete_col > left + width || delete_col < left) || (delete_row<top || delete_row>top + height)) {
-                                        //delete_data[delete_col] = (uchar)0;
-                                    }
-                                    //else {//range of max lable box///////////////////////for visible center line////////////////////////////////////////////
-                                    // if (delete_data[delete_col] != 0 && !lane_checked&& coordi_index<dst.cols / 2 * 3) {
-                                    //  lane_checked = true;
-                                    //  right_lane_first_coordi[coordi_index + coordi_offset] = (uint)delete_col;
-                                    //  right_lane_first_coordi[coordi_index + coordi_offset + 1] = (uint)delete_row;
-                                    //  int lane_width_check = 0;
-                                    //  while (delete_data[delete_col + lane_width_check] != 0) {
-                                    //   lane_width_check++;
-                                    //  }
-                                    //  right_lane_first_coordi[coordi_index + coordi_offset + 2] = lane_width_check;
-                                    // }
-
-                                    //}///////////////////////////////////////////////////////////////////////////////////
-                                    }
-
                                 }
-
-                        }
-                        else {//delete wrong lable //유효 레이블 내의 무효 레이블값들을 지움.. 2인값은 1빼도록 하는 방식으로 유효차선이랑 겹치는부분 빼
-                            for (int row = top; row < top + height; row++) {
-                                uchar* data = dst.ptr<uchar>(row);
-                                    for (int col = left; col < left + width; col++) {//1채널이라 (left+width)에 채널값 안곱함
-                                         data[col] = (uchar)0;
-                                    }
                             }
                         }
-                //    imshow("lane_right", dst);
+
+                        for (int delete_row = dst.rows - 1; delete_row >= 0; --delete_row)
+                        {
+                            uchar *delete_data = dst.ptr<uchar>(delete_row);
+                            for (int delete_col = 0; delete_col < dst.cols; ++delete_col)
+                            {
+                                if ((delete_col > left + width || delete_col < left) || (delete_row < top || delete_row > top + height))
+                                {
+                                    //delete_data[delete_col] = (uchar)0;
+                                }
+                            }
+                        }
                     }
-              //  imshow("drawing", draw_max_lable);//for visible lane max lable box
-                box_pt.push_back(cv::Point(dst.cols/2,dst.rows/2));
-                box_pt.push_back(cv::Point(dst.cols-1/dst.rows-1));
-                return is_vaild;
+                    else
+                    { 
+                        for (int row = top; row < top + height; row++)
+                        {
+                            uchar *data = dst.ptr<uchar>(row);
+                            for (int col = left; col < left + width; col++)
+                            { 
+                                data[col] = (uchar)0;
+                            }
+                        }
+                    }
+                }
+                box_pt.push_back(cv::Point(dst.cols / 2, dst.rows / 2));
+                box_pt.push_back(cv::Point(dst.cols - 1 / dst.rows - 1));
+                //return is_vaild;
             }
 
-           void CalLane::makeContoursRightLane(cv::Mat src, cv::Mat& dst, int* crosswalk){
+            void CalLane::makeContoursRightLane(cv::Mat src, cv::Mat &dst, int *crosswalk)
+            {
                 std::vector<std::vector<cv::Point>> countours;
                 std::vector<cv::Vec4i> hierachy;
 

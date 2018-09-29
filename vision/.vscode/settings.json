@@ -1,5 +1,6 @@
-{
+
     {
+      "files.autoGuessEncoding": true,
         "C_Cpp.autoAddFileAssociations": true,
     
         // Controls the auto-completion provider. "Default" uses the active IntelliSense engine. "Disabled" uses the word-based completion provided by Visual Studio Code.
@@ -143,7 +144,29 @@
         },
       
         // Configure file associations to languages (e.g. "*.extension": "html"). These have precedence over the default associations of the languages installed.
-        "files.associations": {},
+        "files.associations": {
+          "cctype": "cpp",
+          "cmath": "cpp",
+          "csignal": "cpp",
+          "cstdarg": "cpp",
+          "cstddef": "cpp",
+          "cstdio": "cpp",
+          "cstdlib": "cpp",
+          "cstring": "cpp",
+          "ctime": "cpp",
+          "cwchar": "cpp",
+          "cwctype": "cpp",
+          "atomic": "cpp",
+          "strstream": "cpp",
+          "chrono": "cpp",
+          "cstdint": "cpp",
+          "initializer_list": "cpp",
+          "iosfwd": "cpp",
+          "ratio": "cpp",
+          "thread": "cpp",
+          "cinttypes": "cpp",
+          "typeindex": "cpp"
+        },
       
       
       
@@ -1870,4 +1893,3 @@
         "markdown.preview.fontFamily": "-apple-system, BlinkMacSystemFont, 'Segoe WPC', 'Segoe UI', 'HelveticaNeue-Light', 'Ubuntu', 'Droid Sans', sans-serif"
       
     }
-}
