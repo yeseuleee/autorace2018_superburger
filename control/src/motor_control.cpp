@@ -190,7 +190,7 @@ void resetMsgCallback(const std_msgs::Bool resetMsg){
 int main(int argc, char **argv){
     ros::init(argc, argv, "motor_control");
     ros::NodeHandle nh;
-    ros::Rate loop_rate(30);
+    ros::Rate loop_rate(5);
     initParam(nh);
     ros::Publisher twist_pub = nh.advertise<geometry_msgs::Twist>("/cmd_vel",1000); 
 	ros::Publisher cloud_pub = nh.advertise<sensor_msgs::PointCloud2>("/cloud_out",1000);

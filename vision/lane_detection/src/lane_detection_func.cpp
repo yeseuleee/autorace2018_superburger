@@ -1392,7 +1392,7 @@ namespace lane_detect_algo{
                         int height = data[cv::CC_STAT_HEIGHT];
 
                         cv::rectangle(draw_lable, cv::Point(left, top), cv::Point(left + width, top + height), cv::Scalar(0, 0, 255), 1);
-                        imshow("y_lable", draw_lable);
+                        //imshow("y_lable", draw_lable);
 
                         if (area > 10)
                         {
@@ -1468,30 +1468,9 @@ namespace lane_detect_algo{
                 std::vector<std::vector<cv::Point>> countours;
                 std::vector<cv::Vec4i> hierachy;
                 cv::Point pt_left_top, pt_right_bottom;
-                std::vector<cv::Point> box_pt;
+                std::vector<cv::Point> none_delete_pt;
                 int is_vaild = -1;
-                for (int y = 0; y < src.rows / 2; y++)
-                {
-                    uchar *none_roi_data = src.ptr<uchar>(y);
-                    for (int x = 0; x < src.cols; x++)
-                    {
-                        if (none_roi_data[x] != (uchar)0)
-                        {
-                            none_roi_data[x] = (uchar)0;
-                        }
-                    }
-                }
-                for (int y = 0; y < src.rows; y++)
-                {
-                    uchar *none_roi_data = src.ptr<uchar>(y);
-                    for (int x = 0; x < src.cols / 2; x++)
-                    {
-                        if (none_roi_data[x] != (uchar)0)
-                        {
-                            none_roi_data[x] = (uchar)0;
-                        }
-                    }
-                }
+               
 
                 cv::findContours(src, countours, hierachy, CV_RETR_LIST, CV_CHAIN_APPROX_SIMPLE, cv::Point(0, 0));
                 dst = cv::Mat::zeros(src.size(), CV_8UC3);
@@ -1582,90 +1561,18 @@ namespace lane_detect_algo{
                     int top = data[cv::CC_STAT_TOP];
                     int width = data[cv::CC_STAT_WIDTH];
                     int height = data[cv::CC_STAT_HEIGHT];
-                    cv::rectangle(draw_lable, cv::Point(left, top), cv::Point(left + width, top + height), cv::Scalar(0, 0, 255), 1);
-                    cv::putText(draw_lable, std::to_string(area), cv::Point(left + 20, top + 20),
-                                FONT_HERSHEY_SIMPLEX, 0.3, Scalar(5, 25, 255), 2);
-                    cv::imshow("w_lable", draw_lable);
+                    // cv::rectangle(draw_lable, cv::Point(left, top), cv::Point(left + width, top + height), cv::Scalar(0, 0, 255), 1);
+                    // cv::putText(draw_lable, std::to_string(area), cv::Point(left + 20, top + 20),
+                    //             FONT_HERSHEY_SIMPLEX, 0.3, Scalar(5, 25, 255), 2);
+                    // cv::imshow("w_lable", draw_lable);
 
-                    if (area > 10)
+                    if(area >= 30 && height >= 40)
                     {
+                        none_delete_pt.clear();
+                        none_delete_pt.resize(0);
+                        none_delete_pt.push_back(cv::Point(left,top));
+                        none_delete_pt.push_back(cv::Point(left+width,top+height));
                         //is_vaild++;
-                        std::vector<int> lane_width;
-                        int my_sum = 0, my_avg = 0, my_cnt = 0;
-                        //saving lane width & inner lane point
-                        for (uint y = top + height; y > top; y--)
-                        {
-                            uchar *fill_data = dst.ptr<uchar>(y);
-                            for (uint x = left; x < (left + width); x++)
-                            {
-                                if (fill_data[x] != (uchar)0)
-                                {
-                                    int i = x, width_sum = 0, no_point = 0;
-                                    while (no_point < 4)
-                                    {
-                                        if (i >= (left + width - 1))
-                                        {
-                                            lane_width.push_back(width_sum);
-                                            my_sum += width_sum;
-                                            break;
-                                        }
-                                        if (fill_data[i] != (uchar)0)
-                                        {
-                                            no_point = 0;
-                                            width_sum++;
-                                            i++;
-                                        }
-                                        else
-                                        {
-                                            no_point++;
-                                            i++;
-                                            width_sum++;
-                                        }
-                                    }
-                                    if (width_sum > 4)
-                                    {
-                                        lane_width.push_back(width_sum);
-                                        my_sum += width_sum;
-                                        my_cnt++;
-                                    }
-                                    break;
-                                }
-                            }
-                        }
-                        //**big lans width means noise**//
-                        if (!lane_width.empty() && my_cnt != 0)
-                        {
-                            my_avg = my_sum / my_cnt;
-                            int reliability = 0;
-                            for (int i = 0; i < lane_width.size(); i++)
-                            {
-                                if (abs(lane_width[i] - lane_width[i + 1]) < 10)
-                                {
-                                    reliability++;
-                                }
-                                else
-                                {
-                                    reliability--;
-                                }
-                                if (lane_width[i] > 30)
-                                    reliability--;
-                            }
-                            if (reliability < 0)
-                            {
-                                for (uint y = top + height; y > top; y--)
-                                {
-                                    uchar *delete_data = dst.ptr<uchar>(y);
-                                    for (uint x = left; x < (left + width); x++)
-                                    {
-                                        if (delete_data[x] != (uchar)0)
-                                        {
-                                            delete_data[x] = (uchar)0;
-                                        }
-                                    }
-                                }
-                            }
-                        }
-
                         for (int delete_row = dst.rows - 1; delete_row >= 0; --delete_row)
                         {
                             uchar *delete_data = dst.ptr<uchar>(delete_row);
@@ -1680,18 +1587,47 @@ namespace lane_detect_algo{
                     }
                     else
                     { 
-                        for (int row = top; row < top + height; row++)
-                        {
-                            uchar *data = dst.ptr<uchar>(row);
-                            for (int col = left; col < left + width; col++)
-                            { 
-                                data[col] = (uchar)0;
+                         if(area < 30 || (width < 20 && area > 30)){
+                                    for (int row = top; row < top + height; row++)
+                                    {
+                                        uchar *data = dst.ptr<uchar>(row);
+                                        for (int col = left; col < left+width; col++)
+                                        {  
+                                            data[col] = (uchar)0;
+                                        }
+                                    }
+                                }
+                        if(!none_delete_pt.empty()){
+                            if(top < none_delete_pt[0].y || top+height > none_delete_pt[1].y 
+                                || left < none_delete_pt[0].x || left+width > none_delete_pt[1].x){     
+                                int pt_len = 0;
+                                for (int row = top; row < top + height; row++)
+                                {
+                                    uchar *data = dst.ptr<uchar>(row);
+                                    for (int col = left+width; col > left; col--)
+                                    { 
+                                        pt_len++;
+                                        if(pt_len > 5 && data[col] == (uchar)0){
+                                            break;
+                                        }
+                                        else{
+                                            //data[col] = (uchar)0;
+                                        }
+                                        
+                                    }
+                                    pt_len = 0;
+                                }
                             }
+                            
                         }
                     }
+                    cv::rectangle(draw_lable, cv::Point(left, top), cv::Point(left + width, top + height), cv::Scalar(0, 0, 255), 1);
+                    cv::putText(draw_lable, std::to_string(area), cv::Point(left + 20, top + 20),
+                                FONT_HERSHEY_SIMPLEX, 0.3, Scalar(5, 25, 255), 2);
+                    cv::imshow("w_lable", draw_lable);
                 }
-                box_pt.push_back(cv::Point(dst.cols / 2, dst.rows / 2));
-                box_pt.push_back(cv::Point(dst.cols - 1 / dst.rows - 1));
+                //box_pt.push_back(cv::Point(dst.cols / 2, dst.rows / 2));
+                //box_pt.push_back(cv::Point(dst.cols - 1 / dst.rows - 1));
                 //return is_vaild;
             }
 
