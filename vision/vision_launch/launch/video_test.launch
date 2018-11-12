@@ -74,6 +74,13 @@
 			<param name="y2_smax" value="132"/>
 			<param name="y2_vmin" value="9"/>
 			<param name="y2_vmax" value="255"/>
+
+			<param name="b_hmin" value="53"/>
+			<param name="b_hmax" value="114"/>
+			<param name="b_smin" value="152"/>
+			<param name="b_smax" value="255"/>
+			<param name="b_vmin" value="64"/>
+			<param name="b_vmax" value="255"/>
     </node>
 
 		<!--

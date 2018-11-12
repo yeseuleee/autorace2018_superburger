@@ -65,6 +65,9 @@ static int r2_hmin, r2_hmax, r2_smin, r2_smax, r2_vmin, r2_vmax;
 static int g_hmin, g_hmax, g_smin, g_smax, g_vmin, g_vmax;
 static int y2_hmin, y2_hmax, y2_smin, y2_smax, y2_vmin, y2_vmax;
 
+//for street sign
+static int b_hmin, b_hmax, b_smin, b_smax, b_vmin, b_vmax;
+
 static int reset_msg;
 
 double fps = 5;
@@ -126,7 +129,7 @@ class InitImgObjectforROS
         void initMyRESETTrackbar(const string &trackbar_name);
         void setMyHSVTrackbarValue(const string &trackbar_name);
         void setMyRESETTrackbarValue(const string &trackbar_name);
-        void setColorPreocessing(lane_detect_algo::CalLane callane, cv::Mat src, cv::Mat &dst_y, cv::Mat &dst_w, cv::Mat &dst_r, cv::Mat &dst_r2, cv::Mat &dst_g, cv::Mat &dst_y2, cv::Mat &parking_white);
+        void setColorPreocessing(lane_detect_algo::CalLane callane, cv::Mat src, cv::Mat &dst_y, cv::Mat &dst_w, cv::Mat &dst_r, cv::Mat &dst_r2, cv::Mat &dst_g, cv::Mat &dst_y2, cv::Mat &dst_b, cv::Mat &parking_white);
         void setProjection(lane_detect_algo::CalLane callane, cv::Mat src, unsigned int *H_aix_Result_color);
         void restoreImgWithLangeMerge(lane_detect_algo::CalLane callane, cv::Mat origin_size_img, cv::Mat src_y, cv::Mat src_w, cv::Mat &dst);
         void extractLanePoint(cv::Mat origin_src, cv::Mat lane_src);
@@ -142,6 +145,7 @@ class InitImgObjectforROS
         int checkDirectionWithFlann(cv::Mat &src, int min_hessian);
         bool checkParkingWithFlann(cv::Mat &src, int min_hessian);
         bool checkTunnelWithFlann(cv::Mat &src, int min_hessian);
+        bool checkBlueArea(cv::Mat &src, cv::Point &left_top_blue, cv::Point &right_bottom_blue);
 
         bool detectBlockingBar(cv::Mat src);
         bool signalRedDetection(cv::Mat src_red);
@@ -177,6 +181,7 @@ InitImgObjectforROS::InitImgObjectforROS() : it(nh)
                 initMyHSVTrackbar(groupName + "_SIGNAL_RED_TRACKBAR");
                 initMyHSVTrackbar(groupName + "_SIGNAL_GREEN_TRACKBAR");
                 initMyHSVTrackbar(groupName + "_SIGNAL_YELLOW_TRACKBAR");
+                initMyHSVTrackbar(groupName + "_BLUE_AREA_TRACKBAR");
                 initMyRESETTrackbar("reset msg");
         }
 }
@@ -199,7 +204,7 @@ void InitImgObjectforROS::imgCb(const sensor_msgs::ImageConstPtr &img_msg)
         cv::Mat frame, yellow_hsv, white_hsv, origin_white_hsv, origin_yellow_hsv, yellow_labeling, white_labeling;
         cv::Mat yellow_roi, white_roi, white_sobel, yellow_canny;
         cv::Mat laneColor, origin, mergelane;
-        cv::Mat red_hsv, red2_hsv, green_hsv, yellow2_hsv, parking_white, park_origin;
+        cv::Mat red_hsv, red2_hsv, green_hsv, yellow2_hsv, blue_hsv, parking_white, park_origin;
         cv::Mat gui_test;
         std::vector<cv::Point> box_pt_y, box_pt_w;
         std::vector<cv::Point> left_lane_fitting, right_lane_fitting, dot_lane_fitting;
@@ -249,15 +254,38 @@ void InitImgObjectforROS::imgCb(const sensor_msgs::ImageConstPtr &img_msg)
                                 reset_val.data = reset_msg;
                         }
 
-                        //label 구분해서 유사도 비교
-                        //각 단계 진행 이후 유사도 비교 x                        
-                        //checkDirectionWithFlann(frame,400);
-                       // checkParkingWithFlann(frame,400);
-                        checkTunnelWithFlann(frame,400);
+                                             
+                        
+
+                        
+                        
+
                         ////*Process color detection including trackbar setting*////
-                        setColorPreocessing(callane, frame, yellow_hsv, white_hsv, red_hsv, red2_hsv, green_hsv, yellow2_hsv, parking_white);
+                        setColorPreocessing(callane, frame, yellow_hsv, white_hsv, red_hsv, red2_hsv, green_hsv, yellow2_hsv, blue_hsv, parking_white);
                         origin_white_hsv = white_hsv.clone();
                         origin_yellow_hsv = yellow_hsv.clone();
+
+                       
+                        
+                        cv::Point left_top_blue, right_bottom_blue;
+                        bool is_blue = false;
+                        is_blue = checkBlueArea(blue_hsv,left_top_blue,right_bottom_blue);
+                        if(is_blue){
+                                
+                                if(for_gui){
+                                        cv::rectangle(gui_test, left_top_blue, right_bottom_blue, cv::Scalar(0, 0, 255), 1);
+                                }
+                                cv::Rect2d blue_rect = cv::Rect(left_top_blue,right_bottom_blue);
+                                cv::Mat blue_src = frame(blue_rect);
+                               
+                                cv::imshow("vvv",blue_src);
+
+                                //각 단계 진행 이후 유사도 비교 x   
+                                checkDirectionWithFlann(blue_src,100);
+                                checkParkingWithFlann(blue_src,400);
+                        }
+                        //노란 레이블 추가
+                        checkTunnelWithFlann(frame,400);
 
                         cv::Mat park_detect = origin_white_hsv.clone();
                         // cv::Sobel(park_detect, park_detect, park_detect.depth(), 0, 1);
@@ -1865,7 +1893,7 @@ void InitImgObjectforROS::initParam()
         nh.param<int>("/" + groupName + "/lane_detection/w_vmin", w_vmin, 172);
         nh.param<int>("/" + groupName + "/lane_detection/w_vmax", w_vmax, 255);
 
-        //default red when no launch file for signal lamp
+        //default red when no launch file for blocking bar
         nh.param<int>("/" + groupName + "/lane_detection/r_hmin", r_hmin, 0);
         nh.param<int>("/" + groupName + "/lane_detection/r_hmax", r_hmax, 180);
         nh.param<int>("/" + groupName + "/lane_detection/r_smin", r_smin, 0);
@@ -1880,20 +1908,28 @@ void InitImgObjectforROS::initParam()
         nh.param<int>("/" + groupName + "/lane_detection/r2_smax", r2_smax, 24);
         nh.param<int>("/" + groupName + "/lane_detection/r2_vmin", r2_vmin, 172);
         nh.param<int>("/" + groupName + "/lane_detection/r2_vmax", r2_vmax, 255);
-        //default red when no launch file for signal lamp
+        //default yellow when no launch file for signal lamp
         nh.param<int>("/" + groupName + "/lane_detection/y2_hmin", y2_hmin, 0);
         nh.param<int>("/" + groupName + "/lane_detection/y2_hmax", y2_hmax, 180);
         nh.param<int>("/" + groupName + "/lane_detection/y2_smin", y2_smin, 0);
         nh.param<int>("/" + groupName + "/lane_detection/y2_smax", y2_smax, 24);
         nh.param<int>("/" + groupName + "/lane_detection/y2_vmin", y2_vmin, 172);
         nh.param<int>("/" + groupName + "/lane_detection/y2_vmax", y2_vmax, 255);
-        //default red when no launch file for signal lamp
+        //default green when no launch file for signal lamp
         nh.param<int>("/" + groupName + "/lane_detection/g_hmin", g_hmin, 0);
         nh.param<int>("/" + groupName + "/lane_detection/g_hmax", g_hmax, 180);
         nh.param<int>("/" + groupName + "/lane_detection/g_smin", g_smin, 0);
         nh.param<int>("/" + groupName + "/lane_detection/g_smax", g_smax, 24);
         nh.param<int>("/" + groupName + "/lane_detection/g_vmin", g_vmin, 172);
         nh.param<int>("/" + groupName + "/lane_detection/g_vmax", g_vmax, 255);
+
+        //default blue when no launch file for street sign
+        nh.param<int>("/" + groupName + "/lane_detection/b_hmin", b_hmin, 0);
+        nh.param<int>("/" + groupName + "/lane_detection/b_hmax", b_hmax, 180);
+        nh.param<int>("/" + groupName + "/lane_detection/b_smin", b_smin, 0);
+        nh.param<int>("/" + groupName + "/lane_detection/b_smax", b_smax, 24);
+        nh.param<int>("/" + groupName + "/lane_detection/b_vmin", b_vmin, 172);
+        nh.param<int>("/" + groupName + "/lane_detection/b_vmax", b_vmax, 255);
         ROS_INFO("vision gazebo %d\n", gazebo);
 }
 
@@ -2039,6 +2075,27 @@ void InitImgObjectforROS::initMyHSVTrackbar(const string &trackbar_name)
                 cv::createTrackbar("v max", trackbar_name, &g_vmax, 255, NULL);
                 cv::setTrackbarPos("v max", trackbar_name, g_vmax);
         }
+        else if (trackbar_name.find("BLUE") != string::npos && trackbar_name.find("AREA") != string::npos)
+        {
+
+                cv::createTrackbar("h min", trackbar_name, &b_hmin, 179, NULL);
+                cv::setTrackbarPos("h min", trackbar_name, b_hmin);
+
+                cv::createTrackbar("h max", trackbar_name, &b_hmax, 179, NULL);
+                cv::setTrackbarPos("h max", trackbar_name, b_hmax);
+
+                cv::createTrackbar("s min", trackbar_name, &b_smin, 255, NULL);
+                cv::setTrackbarPos("s min", trackbar_name, b_smin);
+
+                cv::createTrackbar("s max", trackbar_name, &b_smax, 255, NULL);
+                cv::setTrackbarPos("s max", trackbar_name, b_smax);
+
+                cv::createTrackbar("v min", trackbar_name, &b_vmin, 255, NULL);
+                cv::setTrackbarPos("v min", trackbar_name, b_vmin);
+
+                cv::createTrackbar("v max", trackbar_name, &b_vmax, 255, NULL);
+                cv::setTrackbarPos("v max", trackbar_name, b_vmax);
+        }
 }
 
 void InitImgObjectforROS::setMyHSVTrackbarValue(const string &trackbar_name)
@@ -2102,6 +2159,16 @@ void InitImgObjectforROS::setMyHSVTrackbarValue(const string &trackbar_name)
                 g_vmin = cv::getTrackbarPos("v min", trackbar_name);
                 g_vmax = cv::getTrackbarPos("v max", trackbar_name);
         }
+        else if (trackbar_name.find("BLUE") != string::npos && trackbar_name.find("AREA") != string::npos)
+        {
+
+                b_hmin = cv::getTrackbarPos("h min", trackbar_name);
+                b_hmax = cv::getTrackbarPos("h max", trackbar_name);
+                b_smin = cv::getTrackbarPos("s min", trackbar_name);
+                b_smax = cv::getTrackbarPos("s max", trackbar_name);
+                b_vmin = cv::getTrackbarPos("v min", trackbar_name);
+                b_vmax = cv::getTrackbarPos("v max", trackbar_name);
+        }
 
         nh.setParam("/" + groupName + "/lane_detection/y_hmin", y_hmin);
         nh.setParam("/" + groupName + "/lane_detection/y_hmax", y_hmax);
@@ -2131,6 +2198,13 @@ void InitImgObjectforROS::setMyHSVTrackbarValue(const string &trackbar_name)
         nh.setParam("/" + groupName + "/lane_detection/r2_vmin", r2_vmin);
         nh.setParam("/" + groupName + "/lane_detection/r2_vmax", r2_vmax);
 
+        nh.setParam("/" + groupName + "/lane_detection/y2_hmin", y2_hmin);
+        nh.setParam("/" + groupName + "/lane_detection/y2_hmax", y2_hmax);
+        nh.setParam("/" + groupName + "/lane_detection/y2_smin", y2_smin);
+        nh.setParam("/" + groupName + "/lane_detection/y2_smax", y2_smax);
+        nh.setParam("/" + groupName + "/lane_detection/y2_vmin", y2_vmin);
+        nh.setParam("/" + groupName + "/lane_detection/y2_vmax", y2_vmax);
+
         nh.setParam("/" + groupName + "/lane_detection/g_hmin", g_hmin);
         nh.setParam("/" + groupName + "/lane_detection/g_hmax", g_hmax);
         nh.setParam("/" + groupName + "/lane_detection/g_smin", g_smin);
@@ -2138,15 +2212,16 @@ void InitImgObjectforROS::setMyHSVTrackbarValue(const string &trackbar_name)
         nh.setParam("/" + groupName + "/lane_detection/g_vmin", g_vmin);
         nh.setParam("/" + groupName + "/lane_detection/g_vmax", g_vmax);
 
-        nh.setParam("/" + groupName + "/lane_detection/y2_hmin", y2_hmin);
-        nh.setParam("/" + groupName + "/lane_detection/y2_hmax", y2_hmax);
-        nh.setParam("/" + groupName + "/lane_detection/y2_smin", y2_smin);
-        nh.setParam("/" + groupName + "/lane_detection/y2_smax", y2_smax);
-        nh.setParam("/" + groupName + "/lane_detection/y2_vmin", y2_vmin);
-        nh.setParam("/" + groupName + "/lane_detection/y2_vmax", y2_vmax);
+        nh.setParam("/" + groupName + "/lane_detection/b_hmin", b_hmin);
+        nh.setParam("/" + groupName + "/lane_detection/b_hmax", b_hmax);
+        nh.setParam("/" + groupName + "/lane_detection/b_smin", b_smin);
+        nh.setParam("/" + groupName + "/lane_detection/b_smax", b_smax);
+        nh.setParam("/" + groupName + "/lane_detection/b_vmin", b_vmin);
+        nh.setParam("/" + groupName + "/lane_detection/b_vmax", b_vmax);
 }
 
-void InitImgObjectforROS::setColorPreocessing(lane_detect_algo::CalLane callane, cv::Mat src, cv::Mat &dst_y, cv::Mat &dst_w, cv::Mat &dst_r, cv::Mat &dst_r2, cv::Mat &dst_g, cv::Mat &dst_y2, cv::Mat &parking_white)
+void InitImgObjectforROS::setColorPreocessing(lane_detect_algo::CalLane callane, cv::Mat src, cv::Mat &dst_y, cv::Mat &dst_w, cv::Mat &dst_r, 
+                                              cv::Mat &dst_r2, cv::Mat &dst_g, cv::Mat &dst_y2, cv::Mat &dst_b, cv::Mat &parking_white)
 {
         ////*Make trackbar obj*////
         if (track_bar)
@@ -2155,9 +2230,9 @@ void InitImgObjectforROS::setColorPreocessing(lane_detect_algo::CalLane callane,
                 setMyHSVTrackbarValue(groupName + "_WHITE_LANE_TRACKBAR");
                 setMyHSVTrackbarValue(groupName + "_BLOCKING_RED_TRACKBAR");
                 setMyHSVTrackbarValue(groupName + "_SIGNAL_RED_TRACKBAR");
-                setMyHSVTrackbarValue(groupName + "_SIGNAL_GREEN_TRACKBAR");
                 setMyHSVTrackbarValue(groupName + "_SIGNAL_YELLOW_TRACKBAR");
-                ;
+                setMyHSVTrackbarValue(groupName + "_SIGNAL_GREEN_TRACKBAR");
+                setMyHSVTrackbarValue(groupName + "_BLUE_AREA_TRACKBAR");;
         }
 
         ////*Make birdeyeview img*////
@@ -2209,6 +2284,8 @@ void InitImgObjectforROS::setColorPreocessing(lane_detect_algo::CalLane callane,
                 callane.detectWhiteRange(bev, dst_g, g_hmin, g_hmax, g_smin, g_smax, g_vmin, g_vmax, 0, 0);
                 callane.detectWhiteRange(bev, dst_y2, y2_hmin, y2_hmax, y2_smin, y2_smax, y2_vmin, y2_vmax, 0, 0);
 
+                callane.detectWhiteRange(bev, dst_b, b_hmin, b_hmax, b_smin, b_smax, b_vmin, b_vmax, 0, 0);
+
                 cv::imshow(groupName + "_YELLOW_LANE_TRACKBAR", dst_y);
                 cv::imshow(groupName + "_WHITE_LANE_TRACKBAR", dst_w);
 
@@ -2217,6 +2294,8 @@ void InitImgObjectforROS::setColorPreocessing(lane_detect_algo::CalLane callane,
                 cv::imshow(groupName + "_SIGNAL_RED_TRACKBAR", dst_r2);
                 cv::imshow(groupName + "_SIGNAL_GREEN_TRACKBAR", dst_g);
                 cv::imshow(groupName + "_SIGNAL_YELLOW_TRACKBAR", dst_y2);
+
+                cv::imshow(groupName + "_BLUE_AREA_TRACKBAR", dst_b);
         }
         else
         { //Don't use trackbar. Use defalut value.
@@ -2228,6 +2307,8 @@ void InitImgObjectforROS::setColorPreocessing(lane_detect_algo::CalLane callane,
                 callane.detectWhiteRange(bev, dst_r2, 160, 179, 0, 29, 179, 255, 0, 0);
                 callane.detectWhiteRange(bev, dst_g, 38, 75, 0, 29, 179, 255, 0, 0);
                 callane.detectWhiteRange(bev, dst_y2, 7, 21, 52, 151, 0, 180, 0, 0);
+
+                callane.detectWhiteRange(bev, dst_b, 53, 114, 152, 255, 64, 255, 0, 0);
         }
 }
 
@@ -3026,7 +3107,7 @@ int InitImgObjectforROS::checkDirectionWithFlann(cv::Mat &src, int min_hessian)
         cv::Mat left_turn_src = cv::imread("/home/seuleee/Pictures/left_turn_t1.jpg", cv::IMREAD_GRAYSCALE);
         cv::Mat right_turn_src = cv::imread("/home/seuleee/Pictures/right_turn_t2.jpg", cv::IMREAD_GRAYSCALE);
         cv::Mat input_src = src.clone();
-        //cv::cvtColor(input_src, input_src, CV_BGR2GRAY);
+        cv::cvtColor(input_src, input_src, CV_BGR2GRAY);
         cv::Mat descriptors_input, descriptors_left_turn, descriptors_right_turn;
 
         cv::Ptr<cv::xfeatures2d::SURF> detector = cv::xfeatures2d::SURF::create(min_hessian);
@@ -3036,11 +3117,25 @@ int InitImgObjectforROS::checkDirectionWithFlann(cv::Mat &src, int min_hessian)
         detector->detectAndCompute(left_turn_src, cv::noArray(), keypoints_left_turn, descriptors_left_turn);
         detector->detectAndCompute(right_turn_src, cv::noArray(), keypoints_right_turn, descriptors_right_turn);
 
+        
+
         cv::Ptr<cv::DescriptorMatcher> matcher1 = cv::DescriptorMatcher::create(cv::DescriptorMatcher::FLANNBASED);
         cv::Ptr<cv::DescriptorMatcher> matcher2 = cv::DescriptorMatcher::create(cv::DescriptorMatcher::FLANNBASED);
         std::vector<std::vector<cv::DMatch>> knn_matches_left, knn_matches_right;
-        matcher1->knnMatch(descriptors_left_turn, descriptors_input, knn_matches_left, 2);
-        matcher2->knnMatch(descriptors_right_turn, descriptors_input, knn_matches_right, 2);
+        if(descriptors_input.size >= descriptors_left_turn.size){
+                matcher1->knnMatch(descriptors_left_turn, descriptors_input, knn_matches_left, 2);
+        }
+        else{
+                matcher1->knnMatch(descriptors_input,descriptors_left_turn,  knn_matches_left, 2);
+        }
+
+        if(descriptors_input.size >= descriptors_right_turn.size){
+                matcher2->knnMatch(descriptors_right_turn, descriptors_input, knn_matches_right, 2);
+        }
+        else{
+                matcher2->knnMatch(descriptors_input,descriptors_right_turn,  knn_matches_right, 2);
+        }
+
 
         const float ratio_thresh = 0.7f;
         if(for_gui){
@@ -3061,8 +3156,17 @@ int InitImgObjectforROS::checkDirectionWithFlann(cv::Mat &src, int min_hessian)
                 }
                 cv::Mat img_matches;
                 if(good_matches_left.size() > good_matches_right.size()){
-                        cv::drawMatches(left_turn_src, keypoints_left_turn, input_src, keypoints_input, good_matches_left, img_matches,
-                        cv::Scalar::all(-1), cv::Scalar::all(-1), std::vector<char>(), cv::DrawMatchesFlags::NOT_DRAW_SINGLE_POINTS);
+
+                        if(descriptors_input.size >= descriptors_left_turn.size){
+                               cv::drawMatches(left_turn_src, keypoints_left_turn, input_src, keypoints_input, good_matches_left, img_matches,
+                                               cv::Scalar::all(-1), cv::Scalar::all(-1), std::vector<char>(), cv::DrawMatchesFlags::NOT_DRAW_SINGLE_POINTS);
+                        }
+                        else{
+                                cv::drawMatches(input_src, keypoints_input, left_turn_src, keypoints_left_turn, good_matches_left, img_matches,
+                                               cv::Scalar::all(-1), cv::Scalar::all(-1), std::vector<char>(), cv::DrawMatchesFlags::NOT_DRAW_SINGLE_POINTS);
+                        }
+                        // cv::drawMatches(left_turn_src, keypoints_left_turn, input_src, keypoints_input, good_matches_left, img_matches,
+                        // cv::Scalar::all(-1), cv::Scalar::all(-1), std::vector<char>(), cv::DrawMatchesFlags::NOT_DRAW_SINGLE_POINTS);
                         if(good_matches_left.size() > 3){
                                 return_val = -1;
                                 printf("*******************************************************left turn !!!!\n");   
@@ -3074,8 +3178,17 @@ int InitImgObjectforROS::checkDirectionWithFlann(cv::Mat &src, int min_hessian)
                         cv::imshow("surf keypoints", img_matches);
                 }
                 else if(good_matches_left.size() < good_matches_right.size()){
-                        cv::drawMatches(right_turn_src, keypoints_right_turn, input_src, keypoints_input,  good_matches_right, img_matches,
-                        cv::Scalar::all(-1), cv::Scalar::all(-1), std::vector<char>(), cv::DrawMatchesFlags::NOT_DRAW_SINGLE_POINTS);
+                        if(descriptors_input.size >= descriptors_right_turn.size){
+                               cv::drawMatches(right_turn_src, keypoints_right_turn, input_src, keypoints_input, good_matches_right, img_matches,
+                                               cv::Scalar::all(-1), cv::Scalar::all(-1), std::vector<char>(), cv::DrawMatchesFlags::NOT_DRAW_SINGLE_POINTS);
+                        }
+                        else{
+                                cv::drawMatches(input_src, keypoints_input, right_turn_src, keypoints_right_turn, good_matches_right, img_matches,
+                                               cv::Scalar::all(-1), cv::Scalar::all(-1), std::vector<char>(), cv::DrawMatchesFlags::NOT_DRAW_SINGLE_POINTS);
+                        }
+                        
+                        // cv::drawMatches(right_turn_src, keypoints_right_turn, input_src, keypoints_input,  good_matches_right, img_matches,
+                        // cv::Scalar::all(-1), cv::Scalar::all(-1), std::vector<char>(), cv::DrawMatchesFlags::NOT_DRAW_SINGLE_POINTS);
                         if(good_matches_right.size()> 3){
                                 return_val = 1;
                                 printf("*******************************************************right turn !!!!\n");
@@ -3146,8 +3259,10 @@ int InitImgObjectforROS::checkDirectionWithFlann(cv::Mat &src, int min_hessian)
 
         // cv::Ptr<cv::DescriptorMatcher> matcher = cv::DescriptorMatcher::create(cv::DescriptorMatcher::FLANNBASED);
         // std::vector<std::vector<cv::DMatch>> knn_matches;
+        //if(descriptors2.size > descriptors1.size)
         // matcher->knnMatch(descriptors1,descriptors2,knn_matches,2);
-
+        //else
+        // matcher->knnMatch(descriptors2,descriptors1,knn_matches,2);
         // const float ratio_thresh = 0.7f;
         // std::vector<cv::DMatch> good_matches;
         // for(size_t i = 0; i< knn_matches.size(); i++){
@@ -3156,6 +3271,10 @@ int InitImgObjectforROS::checkDirectionWithFlann(cv::Mat &src, int min_hessian)
         //         }
         // }
         // cv::Mat img_matches;
+        //if(left_turn_src.size > left_turn_origin)
+        // cv::drawMatches(left_turn_origin,keypoints2,left_turn_src,keypoints1,good_matches,img_matches,
+        //                 cv::Scalar::all(-1),cv::Scalar::all(-1),std::vector<char>(),cv::DrawMatchesFlags::NOT_DRAW_SINGLE_POINTS);
+        //else
         // cv::drawMatches(left_turn_src,keypoints1,left_turn_origin,keypoints2,good_matches,img_matches,
         //                 cv::Scalar::all(-1),cv::Scalar::all(-1),std::vector<char>(),cv::DrawMatchesFlags::NOT_DRAW_SINGLE_POINTS);
         // std::cout<<"good matches size : "<<good_matches.size()<<std::endl;
@@ -3180,7 +3299,12 @@ bool InitImgObjectforROS::checkParkingWithFlann(cv::Mat &src, int min_hessian){
 
         cv::Ptr<cv::DescriptorMatcher> matcher = cv::DescriptorMatcher::create(cv::DescriptorMatcher::FLANNBASED);
         std::vector<std::vector<cv::DMatch>> knn_matches;
-        matcher->knnMatch(descriptors_parking, descriptors_input, knn_matches, 2);
+        if(descriptors_input.size > descriptors_parking.size){
+                matcher->knnMatch(descriptors_parking, descriptors_input, knn_matches, 2);
+        }
+        else{
+                matcher->knnMatch(descriptors_input, descriptors_parking, knn_matches, 2);
+        }
 
         const float ratio_thresh = 0.7f;
         if(for_gui){
@@ -3195,8 +3319,14 @@ bool InitImgObjectforROS::checkParkingWithFlann(cv::Mat &src, int min_hessian){
                 
                 cv::Mat img_matches;
                 if(good_matches.size() > 4){
-                        cv::drawMatches(parking_src, keypoints_parking, input_src, keypoints_input, good_matches, img_matches,
-                        cv::Scalar::all(-1), cv::Scalar::all(-1), std::vector<char>(), cv::DrawMatchesFlags::NOT_DRAW_SINGLE_POINTS);
+                        if(input_src.size > parking_src.size){
+                                cv::drawMatches(parking_src, keypoints_parking, input_src, keypoints_input, good_matches, img_matches,
+                                                cv::Scalar::all(-1), cv::Scalar::all(-1), std::vector<char>(), cv::DrawMatchesFlags::NOT_DRAW_SINGLE_POINTS);
+                        }
+                        else{
+                                cv::drawMatches(input_src, keypoints_input, parking_src, keypoints_parking,  good_matches, img_matches,
+                                                cv::Scalar::all(-1), cv::Scalar::all(-1), std::vector<char>(), cv::DrawMatchesFlags::NOT_DRAW_SINGLE_POINTS);
+                        }
                         return_val = true;
                         printf("*******************************************************parking area !!!!\n");   
                         printf("good match parking size : %d\n",good_matches.size());
@@ -3295,7 +3425,67 @@ bool InitImgObjectforROS::checkTunnelWithFlann(cv::Mat &src, int min_hessian){
         
         return return_val;
 }
+bool InitImgObjectforROS::checkBlueArea(cv::Mat &src, cv::Point &left_top_blue, cv::Point &right_bottom_blue){
+        std::vector<std::vector<cv::Point>> countours;
+        std::vector<cv::Vec4i> hierachy;
 
+        bool return_val = false;
+        
+        cv::findContours(src, countours, hierachy, CV_RETR_LIST, CV_CHAIN_APPROX_SIMPLE, cv::Point(0, 0));
+        cv::Mat dst = cv::Mat::zeros(src.size(), CV_8UC1);
+
+        for (std::vector<std::vector<cv::Point>>::size_type i = 0; i < countours.size(); ++i)
+        {
+                cv::drawContours(dst, countours, i, CV_RGB(255, 255, 255), -1, 8, hierachy, 0, cv::Point());
+        }
+        cv::threshold(dst, dst, 127, 255, cv::THRESH_BINARY);
+        
+        cv::Mat draw_lable;
+        cv::threshold(dst, draw_lable, 127, 255, cv::THRESH_BINARY_INV);
+
+        cv::Mat img_labels, stats, centroids;
+        int numOfLables = cv::connectedComponentsWithStats(dst, img_labels, stats, centroids, 8, CV_32S);
+
+        
+        for (int row = 1; row < numOfLables; row++)
+        {
+
+                int *data = stats.ptr<int>(row);
+                int area = data[cv::CC_STAT_AREA];
+                int left = data[cv::CC_STAT_LEFT];
+                int top = data[cv::CC_STAT_TOP];
+                int width = data[cv::CC_STAT_WIDTH];
+                int height = data[cv::CC_STAT_HEIGHT];
+                // cv::rectangle(draw_lable, cv::Point(left, top), cv::Point(left + width, top + height), cv::Scalar(0, 0, 255), 1);
+                // cv::putText(draw_lable, std::to_string(area), cv::Point(left + 20, top + 20),
+                //             FONT_HERSHEY_SIMPLEX, 0.3, Scalar(5, 25, 255), 2);
+                // cv::imshow("w_lable", draw_lable);
+                
+                if (width >= 20 && height >= 20 && abs(height-width) <10)
+                {
+                        
+                        left_top_blue.x = left;
+                        left_top_blue.y = top;
+                        right_bottom_blue.x = left+width;
+                        right_bottom_blue.y = top+height;
+                        return_val = true;
+                        return return_val;
+                }
+                
+                if(for_gui){
+                        cv::rectangle(draw_lable, cv::Point(left, top), cv::Point(left + width, top + height), cv::Scalar(0, 0, 255), 1);
+                        cv::putText(draw_lable, std::to_string(width), cv::Point(left + 20, top - 20),
+                                cv::FONT_HERSHEY_SIMPLEX, 0.3, cv::Scalar(5, 25, 255), 1);
+                        cv::putText(draw_lable, std::to_string(height), cv::Point(left, top - 20),
+                                cv::FONT_HERSHEY_SIMPLEX, 0.3, cv::Scalar(5, 25, 255), 1);
+                        cv::imshow("blue_lable", draw_lable);
+                }
+                
+               
+        }
+        return return_val;
+         
+}
 int main(int argc, char **argv)
 {
         ros::init(argc, argv, "lane_detection");
