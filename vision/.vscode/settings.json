@@ -145,27 +145,9 @@
       
         // Configure file associations to languages (e.g. "*.extension": "html"). These have precedence over the default associations of the languages installed.
         "files.associations": {
-          "cctype": "cpp",
           "cmath": "cpp",
-          "csignal": "cpp",
-          "cstdarg": "cpp",
-          "cstddef": "cpp",
-          "cstdio": "cpp",
-          "cstdlib": "cpp",
-          "cstring": "cpp",
-          "ctime": "cpp",
-          "cwchar": "cpp",
-          "cwctype": "cpp",
-          "atomic": "cpp",
-          "strstream": "cpp",
-          "chrono": "cpp",
-          "cstdint": "cpp",
-          "initializer_list": "cpp",
-          "iosfwd": "cpp",
-          "ratio": "cpp",
-          "thread": "cpp",
-          "cinttypes": "cpp",
-          "typeindex": "cpp"
+          "complex": "cpp",
+          "cstdlib": "cpp"
         },
       
       

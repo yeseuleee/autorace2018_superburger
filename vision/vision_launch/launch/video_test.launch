@@ -14,7 +14,7 @@
 			<param name="bird_eye_view" value="0"/>
 			<param name="auto_shot" value="0"/>
 			<param name="auto_record" value="0"/>
-			<param name="for_gui" value="0"/>
+			<param name="for_gui" value="1"/>
 			
 			<param name="reset_msg" value="0"/>
 			
@@ -27,16 +27,16 @@
 			<!--robotis-->
 			<param name="y_hmin" value="10"/>
 			<param name="y_hmax" value="40"/>
-			<param name="y_smin" value="83"/>
+			<param name="y_smin" value="33"/>
 			<param name="y_smax" value="132"/>
 			<param name="y_vmin" value="9"/>
 			<param name="y_vmax" value="255"/>
 	
-			<param name="w_hmin" value="63"/>
+			<param name="w_hmin" value="0"/>
 			<param name="w_hmax" value="179"/>
 			<param name="w_smin" value="0"/>
-			<param name="w_smax" value="117"/>
-			<param name="w_vmin" value="202"/>
+			<param name="w_smax" value="14"/>
+			<param name="w_vmin" value="243"/>
 			<param name="w_vmax" value="255"/>
 
 			<param name="r_hmin" value="113"/>

@@ -13,7 +13,7 @@
 			<param name="gazebo" value="0"/>
 			<param name="bird_eye_view" value="0"/>
 			<param name="auto_shot" value="0"/>
-			<param name="auto_record" value="1"/>
+			<param name="auto_record" value="0"/>
 			<param name="for_gui" value="1"/>
 			
 			<param name="reset_msg" value="0"/>
@@ -31,14 +31,19 @@
 			<param name="record_name" value="/home/seuleee/Desktop/autorace_video_src/0720/stop/1/main_record.avi"/>
 			
 			<!--522-->
-			<param name="y_hmin" value="0"/>
+			<!-- <param name="y_hmin" value="0"/> -->
+			<param name="y_hmin" value="19"/>
 			<param name="y_hmax" value="56"/>
-			<param name="y_smin" value="39"/>
-			<param name="y_smax" value="153"/>
-			<param name="y_vmin" value="15"/>
+			<!-- <param name="y_smin" value="39"/> -->
+			<param name="y_smin" value="126"/>
+			<!-- <param name="y_smax" value="153"/> -->
+			<param name="y_smax" value="255"/>
+			<!-- <param name="y_vmin" value="15"/> -->
+			<param name="y_vmin" value="0"/>
 			<param name="y_vmax" value="255"/>
 	
-			<param name="w_hmin" value="70"/>
+			<!-- <param name="w_hmin" value="70"/> -->
+			<param name="w_hmin" value="0"/>
 			<param name="w_hmax" value="179"/>
 			<param name="w_smin" value="0"/>
 			<param name="w_smax" value="88"/>

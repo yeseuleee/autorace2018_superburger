@@ -3,6 +3,7 @@
 #include "sensor_msgs/JointState.h"
 #include "sensor_msgs/PointCloud2.h"
 #include "geometry_msgs/Twist.h"
+#include "geometry_msgs/PoseStamped.h"
 #include "std_msgs/Float64.h"
 #include "std_msgs/MultiArrayDimension.h"
 #include "std_msgs/MultiArrayLayout.h"
@@ -161,6 +162,8 @@ void cloudCallback(const sensor_msgs::PointCloud2ConstPtr& msg)
 void pidCallback(const std_msgs::Float32MultiArray::ConstPtr& goalData){
    goal_v = goalData->data[0];
    goal_w = goalData->data[1];
+
+   
     // int pid_complete = calPid(goalData);
     
     // if(pid_complete){
@@ -198,6 +201,7 @@ int main(int argc, char **argv){
 	ros::Subscriber point_reader = nh.subscribe("/cloud_points",1000,cloudCallback);
     ros::Subscriber ang_vel_reader = nh.subscribe("/main/angular_vel",100,pidCallback);
     ros::Subscriber reset_msg_reader = nh.subscribe("/main/reset_msg",100,resetMsgCallback);
+    //ros::Publisher t_pub = nh.advertise<geometry_msgs::PoseStamped>("/move_base_simple/goal",5); 
 	//ros::ServiceServer control_srv = nh.advertiseService("/msrv",exec_command);
 	
     geometry_msgs::Twist twist_cmd;
@@ -205,23 +209,38 @@ int main(int argc, char **argv){
 	twist_cmd.angular.x = twist_cmd.angular.y = twist_cmd.angular.z = 0;
     js.position.push_back(0.0);
     //std::cout <<"hu"<<std::endl;
-    
-    while(ros::ok()){  
+    geometry_msgs::PoseStamped goal_test;
+
+    while(ros::ok())
+    {  
         ros::spinOnce(); //call all callback functions
-	if(goal_v < 2 && goal_v > -2){
-		twist_cmd.linear.x = goal_v;
-	}
-        else{
-		goal_v = 0.1;
-		twist_cmd.linear.x = goal_v;
-	}
-	if(goal_w < 2 && goal_w > -2){
-		twist_cmd.angular.z = goal_w;
-	}
+        if(goal_v < 2 && goal_v > -2)
+        {
+            twist_cmd.linear.x = goal_v;
+        }
+        else
+        {
+            goal_v = 0.1;
+            twist_cmd.linear.x = goal_v;
+        }
+
+
+        if(goal_w < 2 && goal_w > -2)
+        {
+            twist_cmd.angular.z = goal_w;
+        }
+
         twist_pub.publish(twist_cmd);
         
         loop_rate.sleep();
         
+        // goal_test.header.stamp = ros::Time::now();
+	    // goal_test.header.frame_id = "base_link";
+        // goal_test.pose.position.x = 1.0;
+	    // goal_test.pose.orientation.w = 1.0;
+	   
+	    // t_pub.publish(goal_test); 
+
     }
     return 0;
 }
