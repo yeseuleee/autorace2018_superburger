@@ -194,13 +194,7 @@ void resetMsgCallback(const std_msgs::Bool resetMsg){
     }
 }
 
-void ScanCallback(const sensor_msgs::LaserScan::ConstPtr& input){
-   
-//    for(int i = 0; i<input->ranges.size(); i++){
-//        scan_array.data.push_back(input->ranges[i]);
-//    }
-    
-}
+
 int main(int argc, char **argv){
     ros::init(argc, argv, "motor_control");
     ros::NodeHandle nh;

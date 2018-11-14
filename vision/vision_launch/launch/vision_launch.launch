@@ -10,7 +10,7 @@
 			<param name="imshow" value="0"/>
 			<param name="track_bar" value="1"/>
 
-			<param name="gazebo" value="1"/>
+			<param name="gazebo" value="0"/>
 			<param name="bird_eye_view" value="0"/>
 			<param name="auto_shot" value="0"/>
 			<param name="auto_record" value="0"/>
@@ -19,13 +19,13 @@
 			<param name="reset_msg" value="0"/>
 			
 			<!-- <param name="left_min_interval" value="144"/> -->
-			<param name="left_min_interval" value="147"/>
+			<param name="left_min_interval" value="140"/>
 			<!-- <param name="left_max_interval" value="147"/> -->
-			<param name="left_max_interval" value="160"/>
+			<param name="left_max_interval" value="165"/>
 			<!-- <param name="right_min_interval" value="139"/> -->
-			<param name="right_min_interval" value="149"/>
+			<param name="right_min_interval" value="136"/>
 			<!-- <param name="right_max_interval" value="142"/> -->
-			<param name="right_max_interval" value="160"/>
+			<param name="right_max_interval" value="155"/>
 	
 
 			<param name="record_name" value="/home/seuleee/Desktop/autorace_video_src/0720/stop/1/main_record.avi"/>
@@ -35,7 +35,7 @@
 			<param name="y_hmin" value="19"/>
 			<param name="y_hmax" value="56"/>
 			<!-- <param name="y_smin" value="39"/> -->
-			<param name="y_smin" value="126"/>
+			<param name="y_smin" value="43"/>
 			<!-- <param name="y_smax" value="153"/> -->
 			<param name="y_smax" value="255"/>
 			<!-- <param name="y_vmin" value="15"/> -->
