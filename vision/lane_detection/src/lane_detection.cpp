@@ -2,6 +2,9 @@
 #include <image_transport/image_transport.h>
 #include <opencv2/highgui/highgui.hpp>
 #include <sensor_msgs/image_encodings.h>
+#include <sensor_msgs/LaserScan.h>
+#include <sensor_msgs/PointCloud.h>
+#include <laser_geometry/laser_geometry.h>
 #include <opencv2/imgproc/imgproc.hpp>
 #include <cv_bridge/cv_bridge.h>
 #include <iostream>
@@ -18,6 +21,10 @@
 #include <math.h>
 
 /////////mission check///////
+bool left_direction_mode = false, right_direction_mode = false, two_direction_checked = false;
+int two_direction_stage = 0;
+bool building_mode = false, building_checked = false;
+int building_stage = 0;
 bool parking_mode = false, parking_checked = false;
 int parking_reliabilty = 0, go_cnt = 0;
 cv::Point first_point;
@@ -26,7 +33,7 @@ bool blocking_bar_mode = false, blocking_bar_checked = false;
 int blocking_bar_reliabilty = 0, blocking_bar_stage = 0, blocking_bar_first = 0;
 bool tunnel_mode = false, tunnel_checked = false;
 int tunnel_reliabilty = 0;
-bool signal_lamp_mode = false, signal_lamp_checked = false;
+bool signal_lamp_mode = false, signal_lamp_checked = true;
 int signal_lamp_stage = 0, red_rotation = 0, yellow_rotation = 0;
 int red_reliabilty = 0, green_reliabilty = 0, yellow_reliabilty = 0;
 bool normal_mode = true;
@@ -96,6 +103,7 @@ int left_center_pt = -1, right_center_pt = -1;
 int l_r_center_pt = -1, img_center_left_pt = 145, img_center_right_pt = 175;
 float x_goal_ = 0, y_goal_ = 0, prev_y_goal_ = 0;
 
+double scan_array[360] = {0,};
 cv::Mat left_fit_img, right_fit_img;
 
 static int motor_feq = 0;
@@ -112,11 +120,16 @@ class InitImgObjectforROS
 
         std_msgs::Int32MultiArray coordi_array;
         std_msgs::Float32MultiArray goal_array;
+
+
         std_msgs::Bool reset_val;
         ros::Publisher pub = nh.advertise<std_msgs::Int32MultiArray>("/" + groupName + "/lane", 100); //Topic publishing at each camera
         ros::Publisher goal_pub = nh.advertise<std_msgs::Float32MultiArray>("/" + groupName + "/pixel_goal", 100);
         ros::Publisher ang_vel_pub = nh.advertise<std_msgs::Float32MultiArray>("/" + groupName + "/angular_vel", 100);
         ros::Publisher reset_msg_pub = nh.advertise<std_msgs::Bool>("/" + groupName + "/reset_msg", 100);
+        
+        ros::Subscriber scan_reader = nh.subscribe("/scan",1,&InitImgObjectforROS::ScanCb,this);
+        
         int imgNum = 0; //for saving img
         int msg_count_left = 0, msg_count_right = 0;
         int left_direction_cnt = 0, right_direction_cnt = 0;
@@ -124,6 +137,7 @@ class InitImgObjectforROS
         InitImgObjectforROS();
         ~InitImgObjectforROS();
         void imgCb(const sensor_msgs::ImageConstPtr &img_msg);
+        void ScanCb(const sensor_msgs::LaserScan::ConstPtr& input);
         void initParam();
         void initMyHSVTrackbar(const string &trackbar_name);
         void initMyRESETTrackbar(const string &trackbar_name);
@@ -146,6 +160,7 @@ class InitImgObjectforROS
         bool checkParkingWithFlann(cv::Mat &src, int min_hessian);
         bool checkTunnelWithFlann(cv::Mat &src, int min_hessian);
         bool checkBlueArea(cv::Mat &src, cv::Point &left_top_blue, cv::Point &right_bottom_blue);
+        bool checkYellowArea(cv::Mat &src_red, cv::Mat &src_yellow, cv::Point &left_top_yellow, cv::Point &right_bottom_yellow);
 
         bool detectBlockingBar(cv::Mat src);
         bool signalRedDetection(cv::Mat src_red);
@@ -197,7 +212,22 @@ InitImgObjectforROS::~InitImgObjectforROS()
                 cv::destroyWindow(OPENCV_WINDOW_WC);
         }
 }
-
+void InitImgObjectforROS::ScanCb(const sensor_msgs::LaserScan::ConstPtr& input){
+   
+   for(int i = 0; i< input->ranges.size(); i++){
+       if(input->ranges[i] < 9999){
+               scan_array[i] = input->ranges[i];
+       }
+       else{
+               scan_array[i] = -1.0;
+       }
+       
+       if((i>=0 && i<10) || (i>=350 && i<360)){
+               printf("scan[%d] : %lf\n",i,scan_array[i]);
+       }
+   }
+        
+}
 void InitImgObjectforROS::imgCb(const sensor_msgs::ImageConstPtr &img_msg)
 {
         cv_bridge::CvImagePtr cv_ptr;
@@ -209,7 +239,7 @@ void InitImgObjectforROS::imgCb(const sensor_msgs::ImageConstPtr &img_msg)
         std::vector<cv::Point> box_pt_y, box_pt_w;
         std::vector<cv::Point> left_lane_fitting, right_lane_fitting, dot_lane_fitting;
         uint frame_height, frame_width;
-
+        
         try
         {
                 cv_ptr = cv_bridge::toCvCopy(img_msg, sensor_msgs::image_encodings::BGR8);
@@ -255,50 +285,199 @@ void InitImgObjectforROS::imgCb(const sensor_msgs::ImageConstPtr &img_msg)
                         }
 
                                              
-                        
-
-                        
-                        
-
                         ////*Process color detection including trackbar setting*////
                         setColorPreocessing(callane, frame, yellow_hsv, white_hsv, red_hsv, red2_hsv, green_hsv, yellow2_hsv, blue_hsv, parking_white);
                         origin_white_hsv = white_hsv.clone();
                         origin_yellow_hsv = yellow_hsv.clone();
 
-                       
-                        
-                        cv::Point left_top_blue, right_bottom_blue;
-                        bool is_blue = false;
-                        is_blue = checkBlueArea(blue_hsv,left_top_blue,right_bottom_blue);
-                        if(is_blue){
-                                
-                                if(for_gui){
-                                        cv::rectangle(gui_test, left_top_blue, right_bottom_blue, cv::Scalar(0, 0, 255), 1);
-                                }
-                                cv::Rect2d blue_rect = cv::Rect(left_top_blue,right_bottom_blue);
-                                cv::Mat blue_src = frame(blue_rect);
-                               
-                                cv::imshow("vvv",blue_src);
+                      
+                        if(!two_direction_checked || !parking_checked){
+                                cv::Point left_top_blue, right_bottom_blue;
+                                bool is_blue = false;
+                                is_blue = checkBlueArea(blue_hsv,left_top_blue,right_bottom_blue);
+                                if(is_blue){ 
+                                        
+                                        if(for_gui){
+                                                if(left_top_blue.y > 0 && right_bottom_blue.x < gui_test.cols){
+                                                        cv::rectangle(gui_test, left_top_blue, right_bottom_blue, cv::Scalar(0, 0, 255), 1);
+                                                }
+                                        }
+                                        cv::Rect2d blue_rect = cv::Rect(left_top_blue,right_bottom_blue);
+                                        cv::Mat blue_src = frame(blue_rect);
 
-                                //각 단계 진행 이후 유사도 비교 x   
-                                checkDirectionWithFlann(blue_src,100);
-                                checkParkingWithFlann(blue_src,400);
+                                        cv::Point new_left_top_blue, new_right_bottom_blue;
+                                        new_left_top_blue.x = left_top_blue.x;
+                                        new_left_top_blue.y = right_bottom_blue.y - 1;
+                                        new_right_bottom_blue.x = right_bottom_blue.x;
+                                        if (right_bottom_blue.y + 100 < gui_test.rows)
+                                        {
+                                                new_right_bottom_blue.y = right_bottom_blue.y + 100;
+                                        }
+                                        else
+                                        {
+                                                new_right_bottom_blue.y = right_bottom_blue.y;
+                                        }
+                                        if (for_gui)
+                                        {
+                                                cv::rectangle(gui_test, new_left_top_blue, new_right_bottom_blue, cv::Scalar(0, 0, 255), 1);
+                                        }
+
+                                        int white_score = 0, yellow_score = 0;
+                                        for (int y = new_left_top_blue.y; y < new_right_bottom_blue.y; y++)
+                                        {
+                                                int *check_left_white = white_hsv.ptr<int>(y);
+                                                int *check_right_yellow = yellow_hsv.ptr<int>(y);
+                                                for (int x = new_left_top_blue.x; x < new_right_bottom_blue.x; x++)
+                                                {
+                                                        if (check_left_white[x] != (uchar)0)
+                                                        {
+                                                                white_score++;
+                                                        }
+                                                        if (check_right_yellow[x] != (uchar)0)
+                                                        {
+                                                                yellow_score++;
+                                                        }
+                                                }
+                                        }
+                                         printf("white score : %d\n",white_score);
+                                        printf("yellow score : %d\n",yellow_score);
+                                        //각 단계 진행 이후 유사도 비교 x
+                                        if(!two_direction_checked  && !signal_lamp_mode && !left_direction_mode && !right_direction_mode && !blocking_bar_mode && !parking_mode && !tunnel_mode){
+                                        //if(!two_direction_checked && signal_lamp_checked){
+                                                int my_direction = 0;
+                                                my_direction = checkDirectionWithFlann(blue_src,400);
+                                                
+
+                                                if(my_direction < 0){
+                                                        // cv::Point new_left_top_blue, new_right_bottom_blue;
+                                                        // new_left_top_blue.x = left_top_blue.x - 1;
+                                                        // new_left_top_blue.y = right_bottom_blue.y-1;
+                                                        // new_right_bottom_blue.x = right_bottom_blue.x - 20;
+                                                        // if(right_bottom_blue.y + 100 < gui_test.rows){
+                                                        //         new_right_bottom_blue.y = right_bottom_blue.y + 100;
+                                                        // }
+                                                        // else{
+                                                        //         new_right_bottom_blue.y = right_bottom_blue.y;
+                                                        // }
+                                                        // if(for_gui){cv::rectangle(gui_test, new_left_top_blue, new_right_bottom_blue, cv::Scalar(0, 0, 255), 1);}
+                                                        
+                                                        // int white_score = 0;
+                                                        // for(int y = new_left_top_blue.y; y < new_right_bottom_blue.y; y++){
+                                                        //         int *check_left_white = white_hsv.ptr<int>(y);
+                                                        //         for(int x = new_left_top_blue.x; x<new_right_bottom_blue.x; x++){
+                                                        //                 if(check_left_white[x] != (uchar)0){
+                                                        //                         white_score++;
+                                                        //                 }
+                                                        //         }
+                                                        // }
+                                                        if(white_score >= yellow_score){
+                                                                if(!debug){
+                                                                        printf("white score : %d\n",white_score);
+                                                                        printf("##############################################turn left#####\n\n");
+                                                                        
+                                                                }
+                                                                
+                                                                left_direction_mode = true;
+                                                        }
+                                                        else{
+                                                                if(!debug){
+                                                                        printf("##############################################turn right#####\n\n");
+                                                                }
+                                                                
+                                                                right_direction_mode = true;
+                                                        }
+                                                        
+                                                        normal_mode = false;
+
+                                                        //turn left
+                                                        //nomal 해제 -> yellow 추종 -> nomal 복구 -> direction checked
+                                                }
+                                                else if(my_direction > 0){
+
+                                                        // cv::Point new_left_top_blue, new_right_bottom_blue;
+                                                        // new_left_top_blue.x = left_top_blue.x + 20;
+                                                        // new_left_top_blue.y = right_bottom_blue.y-1;
+                                                        // new_right_bottom_blue.x = right_bottom_blue.x + 1;
+                                                        // if(right_bottom_blue.y + 100 < gui_test.rows){
+                                                        //         new_right_bottom_blue.y = right_bottom_blue.y + 100;
+                                                        // }
+                                                        // else{
+                                                        //         new_right_bottom_blue.y = right_bottom_blue.y;
+                                                        // }
+                                                        // if(for_gui){cv::rectangle(gui_test, new_left_top_blue, new_right_bottom_blue, cv::Scalar(0, 0, 255), 1);}
+                                                        // int yellow_score = 0;
+                                                        // for(int y = new_left_top_blue.y; y < new_right_bottom_blue.y; y++){
+                                                        //         int *check_right_yellow = yellow_hsv.ptr<int>(y);
+                                                        //         for(int x = new_left_top_blue.x; x<new_right_bottom_blue.x; x++){
+                                                        //                 if(check_right_yellow[x] != (uchar)0){
+                                                        //                         yellow_score++;
+                                                        //                 }
+                                                        //         }
+                                                        // }
+                                                        
+                                                        if(yellow_score >= white_score){
+                                                                if(!debug){
+                                                                        printf("yellow score : %d\n",yellow_score);
+                                                                        printf("##############################################turn right#####\n\n");
+                                                                }
+                                                               
+                                                                right_direction_mode = true;
+                                                        }
+                                                        else{
+                                                                if(!debug){
+                                                                        printf("##############################################turn left#####\n\n");
+                                                                }
+                                                                left_direction_mode = true;
+                                                        }
+                                                        
+                                                        normal_mode = false;
+                                                        //turn right
+                                                        //nomal 해제 -> white 추종 -> nomal 복구 -> direction checked
+                                                }
+                                        }
+                                        //************************two direction checked 지울지말지 결정스..*******************
+                                        if(!parking_checked && two_direction_checked && !signal_lamp_mode && !left_direction_mode && !right_direction_mode && !blocking_bar_mode && !parking_mode && !tunnel_mode){
+                                                if(yellow_score < white_score){
+                                                        printf("##############################################parking detection#####\n\n");
+                                                        parking_mode = checkParkingWithFlann(blue_src,400);
+                                                        if(parking_mode) {normal_mode = false;}
+                                                }
+                                                
+                                        }
+                                        
+                                }
                         }
-                        //노란 레이블 추가
-                        checkTunnelWithFlann(frame,400);
+                        
+                        if(!tunnel_checked && !signal_lamp_mode && (left_direction_mode||right_direction_mode) && !blocking_bar_mode && !parking_mode && !tunnel_mode){
+                                
+                                cv::Point left_top_yellow, right_bottom_yellow;
+                                bool is_yellow = false;
+                                is_yellow = checkYellowArea(red_hsv, yellow2_hsv,left_top_yellow,right_bottom_yellow);
+                                if(is_yellow){
+                                        if(for_gui){
+                                                cv::rectangle(gui_test, left_top_yellow, right_bottom_yellow, cv::Scalar(100, 200, 255), 2);
+                                        }
+                                        cv::Rect2d yellow_rect = cv::Rect(left_top_yellow,right_bottom_yellow);
+                                        cv::Mat yellow_src = frame(yellow_rect);
+                                        tunnel_mode = checkTunnelWithFlann(yellow_src,400);
+                                        
+                                        if(tunnel_mode) {normal_mode = false;}
+                                }
+                        }
+                        
 
                         cv::Mat park_detect = origin_white_hsv.clone();
                         // cv::Sobel(park_detect, park_detect, park_detect.depth(), 0, 1);
                         // cv::medianBlur(park_detect,park_detect,3);
                         std::vector<cv::Point> park_line_test;
-                        cv::imshow("park_detect", park_detect);
+                        //cv::imshow("park_detect", park_detect);
 
-                        cv::imshow("blocking_bar", red_hsv);
+                        //cv::imshow("blocking_bar", red_hsv);
                         ///****canny & sobel***///
                         cv::Mat my_canny = frame.clone();
                         //setRoi("left",my_canny);
                         setMyCanny("left_right", my_canny);
-                        cv::imshow("left_right", my_canny);
+                        //cv::imshow("left_right", my_canny);
                         //cv::imshow("canny_left",yellow_canny);
                         //callane.makeContoursLeftLane(yellow_canny, yellow_canny);
 
@@ -463,20 +642,19 @@ void InitImgObjectforROS::imgCb(const sensor_msgs::ImageConstPtr &img_msg)
                                         right_center_pt = -1;
                                 }
                         }
-                        cv::imshow("left_fit",left_fit_img);
-                        cv::imshow("right_fit",right_fit_img);
+                        if(debug){
+                                cv::imshow("left_fit",left_fit_img);
+                                cv::imshow("right_fit",right_fit_img);
+                        }
+                        
 
+                        /*
                         std::vector<cv::Vec4i> lines_left, lines_right;
                         std::vector<cv::Vec4i>::iterator it_left, it_right;
 
+                        
                         cv::Mat hough_test = frame.clone();
                        
-                       // cv::HoughLinesP(my_canny,lines_left,1,CV_PI/180.40,90,30);
-                        
-                        //setMyCanny("right",yellow_labeling);
-                        //setMyMorphology(yellow_labeling);
-                        //setMyMorphology(yellow_labeling);
-
                         cv::HoughLinesP(white_labeling,lines_right,1,CV_PI/180.100,90,90);
                         cv::HoughLinesP(yellow_labeling,lines_left,1,CV_PI/180.100,100,90);
                         
@@ -498,9 +676,10 @@ void InitImgObjectforROS::imgCb(const sensor_msgs::ImageConstPtr &img_msg)
                                 left_degree = left_ladian * 180/CV_PI;
                                 right_degree = right_ladian * 180/CV_PI;
 
-                                printf("degree(left) : %d\n",&left_degree);
-                                printf("degree(right) : %d\n",&right_degree);
-                                
+                                if(debug){
+                                        printf("degree(left) : %d\n",&left_degree);
+                                        printf("degree(right) : %d\n",&right_degree);
+                                }
                                 if(abs(left_degree)>=20 && abs(left_degree)<=80){
                                         if(for_gui){
                                                 cv::line(hough_test,cv::Point(((*it_left)[0] + (*it_left)[2])/2,((*it_left)[1] + (*it_left)[3])/2),
@@ -546,16 +725,17 @@ void InitImgObjectforROS::imgCb(const sensor_msgs::ImageConstPtr &img_msg)
                                 ladian = atan2f((*it_left)[3]-(*it_left)[1], (*it_left)[2]-(*it_left)[0]);
 
                                 degree = ladian * 180/CV_PI;
-                                std::cout<<"            degree(left) : "<<degree<<std::endl;
+                                if(debug){std::cout<<"            degree(left) : "<<degree<<std::endl;}
                                 if(abs(degree)>=20 && abs(degree)<=80){
-                                        cv::line(hough_test,cv::Point(((*it_left)[0] + (*it_left)[2])/2,((*it_left)[1] + (*it_left)[3])/2),
-                                        cv::Point(((*it_left)[0] + (*it_left)[2])/2,((*it_left)[1] + (*it_left)[3])/2+70),
-                                        cv::Scalar(250,200,10),3,0);
+                                        if(for_gui){
+                                                cv::line(hough_test,cv::Point(((*it_left)[0] + (*it_left)[2])/2,((*it_left)[1] + (*it_left)[3])/2),
+                                                cv::Point(((*it_left)[0] + (*it_left)[2])/2,((*it_left)[1] + (*it_left)[3])/2+70),
+                                                cv::Scalar(250,200,10),3,0);
 
-                                        cv::line(hough_test,cv::Point((*it_left)[0], (*it_left)[1]),
-                                        cv::Point((*it_left)[2],(*it_left)[3]),
-                                        cv::Scalar(255,200,20),3,0);
-      
+                                                cv::line(hough_test,cv::Point((*it_left)[0], (*it_left)[1]),
+                                                cv::Point((*it_left)[2],(*it_left)[3]),
+                                                cv::Scalar(255,200,20),3,0);
+                                        }
                                 }
                         }
                         else if(!lines_right.empty() && lines_left.empty()){
@@ -565,8 +745,9 @@ void InitImgObjectforROS::imgCb(const sensor_msgs::ImageConstPtr &img_msg)
                                 ladian = atan2f((*it_right)[3]-(*it_right)[1], (*it_right)[2]-(*it_right)[0]);
 
                                 degree = ladian * 180/CV_PI;
-                                std::cout<<"            degree(right) : "<<degree<<std::endl;
+                                if(debug){std::cout<<"            degree(right) : "<<degree<<std::endl;}
                                 if(abs(degree)>=0 && abs(degree)<=80){
+                                        if(for_gui){
                                         cv::line(hough_test,cv::Point(((*it_right)[0] + (*it_right)[2])/2,((*it_right)[1] + (*it_right)[3])/2),
                                         cv::Point(((*it_right)[0] + (*it_right)[2])/2,((*it_right)[1] + (*it_right)[3])/2+70),
                                         cv::Scalar(25,210,40),3,0);
@@ -574,12 +755,13 @@ void InitImgObjectforROS::imgCb(const sensor_msgs::ImageConstPtr &img_msg)
                                         cv::line(hough_test,cv::Point((*it_right)[0], (*it_right)[1]),
                                         cv::Point((*it_right)[2],(*it_right)[3]),
                                         cv::Scalar(25,220,50),3,0);      
+                                        }
                                 }
                         }
-                              
-
-                        cv::imshow("right hough",hough_test);
-
+                        if(for_gui){
+                                cv::imshow("right hough",hough_test);
+                        }
+                        */
                         if (for_gui)
                         {
                                 if (left_center_pt != -1 && right_center_pt != -1)
@@ -603,32 +785,35 @@ void InitImgObjectforROS::imgCb(const sensor_msgs::ImageConstPtr &img_msg)
                         ////*detect traffic signal*////
                         if (!signal_lamp_checked && !blocking_bar_mode && !parking_mode && !signal_lamp_mode && !tunnel_mode)
                         {
-                                // if((signalRedDetection(red2_hsv)) || (signalYellowDetection(yellow2_hsv))){
-                                //         signal_lamp_mode = true;
-                                // }
-                                // if (signalRedDetection(red2_hsv))
-                                // {
-                                //         red_reliabilty++;
-                                //         if (red_reliabilty > 7)
-                                //         {
-                                //                 signal_lamp_mode = true;
-                                //         }
-                                // }
-                                // else if (signalYellowDetection(yellow2_hsv))
-                                // {
-                                //         yellow_reliabilty++;
-                                //         if (yellow_reliabilty > 3)
-                                //         {
-                                //                 signal_lamp_mode = true;
-                                //         }
-                                // }
-                               // if(signalGreenDetection(green_hsv)){
+                                
+                                /*
+                                if((signalRedDetection(red2_hsv)) || (signalYellowDetection(yellow2_hsv))){
                                         signal_lamp_mode = true;
-                               // }
+                                }
+                                if (signalRedDetection(red2_hsv))
+                                {
+                                        red_reliabilty++;
+                                        if (red_reliabilty > 7)
+                                        {
+                                                signal_lamp_mode = true;
+                                        }
+                                }
+                                else if (signalYellowDetection(yellow2_hsv))
+                                {
+                                        yellow_reliabilty++;
+                                        if (yellow_reliabilty > 3)
+                                        {
+                                                signal_lamp_mode = true;
+                                        }
+                                }
+                                if(signalGreenDetection(green_hsv)) 
+                                */
+                                signal_lamp_mode = true;
                                 if (signal_lamp_mode)
                                 {
                                         normal_mode = false;
-                                        std::cout << "################################ detect signal lamp ####################" << std::endl;
+                                        printf("################################ detect signal lamp ####################\n");
+                                        
                                 }
                         }
 
@@ -639,42 +824,40 @@ void InitImgObjectforROS::imgCb(const sensor_msgs::ImageConstPtr &img_msg)
                                 if (blocking_bar_mode)
                                 {
                                         normal_mode = false;
-                                        std::cout << "################################ detect blocking bar ####################" << std::endl;
+                                        printf("################################ detect blocking bar ####################\n");
                                 }
                         }
 
                         if (!parking_checked && !blocking_bar_mode && !parking_mode && !signal_lamp_mode && !tunnel_mode)
                         {
-                                std::vector<cv::Point> dot_test_box_pt_w;
-                                dot_test_box_pt_w.push_back(cv::Point(0, 0));
-                                dot_test_box_pt_w.push_back(cv::Point(215, parking_white.rows - 1));
+                                // std::vector<cv::Point> dot_test_box_pt_w;
+                                // dot_test_box_pt_w.push_back(cv::Point(0, 0));
+                                // dot_test_box_pt_w.push_back(cv::Point(215, parking_white.rows - 1));
 
-                                if (setMyLaneFitting(parking_white, dot_test_box_pt_w, "dot_test", dot_lane_fitting))
-                                {
+                                // if (setMyLaneFitting(parking_white, dot_test_box_pt_w, "dot_test", dot_lane_fitting))
+                                // {
 
-                                        if (dot_cnt != -1)
-                                        {
-                                                dot_cnt++;
-                                                std::cout << "###################################################################### dot" << std::endl;
-                                        }
-                                        if (dot_cnt >= 2)
-                                        {
-                                                dot_cnt = -1;
-                                                parking_mode = true;
-                                                normal_mode = false;
-                                        }
-                                        cv::polylines(gui_test, dot_lane_fitting, 0, cv::Scalar(222, 232, 22), 3);
-                                }
+                                        // if (dot_cnt != -1)
+                                        // {
+                                        //         dot_cnt++;
+                                        //         printf("################################ dot ####################\n");
+                                        // }
+                                        // if (dot_cnt >= 2)
+                                        // {
+                                        //         dot_cnt = -1;
+                                        //         parking_mode = true;
+                                        //         normal_mode = false;
+                                        // }
+                                        
+                                //}
                         }
-                        if (for_gui)
-                        {
-                                cv::imshow("gui_test", gui_test);
-                        }
+                        if (for_gui){cv::imshow("gui_test", gui_test);}
+                        
                         //left와 right인터벌을 뽑아내는 벡터 위치를 보정할지 말지 결정하자.
 
                         if (normal_mode)
                         {
-                                x_goal_ = 0.07;
+                                x_goal_ = 1.0;
                                 y_goal_ = 0.0;
 
                                 std::cout << "************************************************************************" << std::endl;
@@ -983,7 +1166,6 @@ void InitImgObjectforROS::imgCb(const sensor_msgs::ImageConstPtr &img_msg)
                                                                 }
                                                                 else if (right_roi_slope < 0.7 && right_roi_slope >= 0.6)
                                                                 {
-
                                                                         y_goal_ = 0.27;
                                                                 }
                                                                 else if (right_roi_slope < 0.6 && right_roi_slope >= 0.5)
@@ -1060,616 +1242,6 @@ void InitImgObjectforROS::imgCb(const sensor_msgs::ImageConstPtr &img_msg)
                                 pre_right_roi_slope = right_roi_slope;
                                 left_interval = -1;
                                 right_interval = -1;
-                        }
-
-                        //  cv::Mat ss = frame.clone();
-                        if (parking_mode && !blocking_bar_mode && !signal_lamp_mode && !tunnel_mode)
-                        {
-
-                                cv::Mat parked = origin_white_hsv.clone();
-
-                                cv::Mat park_zero = cv::Mat::zeros(origin_white_hsv.size(), CV_8UC1);
-                                std::cout << "parking stage : " << parking_stage << std::endl;
-                                switch (parking_stage)
-                                {
-                                case 0:
-                                        goal_array.data.clear();
-                                        goal_array.data.resize(0);
-                                        x_goal_ = 0;
-                                        y_goal_ = 0;
-                                        goal_array.data.push_back(x_goal_); //linear_vel아님 정확힌 직진방향 x목표점임. 속도변수따로만들기
-                                        goal_array.data.push_back(y_goal_);
-                                        go_cnt++;
-                                        // if ((left_roi_slope < 0|| left_roi_slope == 11) && left_lane_fitting.size() < 20)
-                                        // {
-                                        //         std::cout<<"111111111"<<std::endl;
-                                        //         goal_array.data.clear();
-                                        //         goal_array.data.resize(0);
-                                        //         x_goal_ = 0;
-                                        //         y_goal_ = 0.1;
-                                        //         goal_array.data.push_back(x_goal_); //linear_vel아님 정확힌 직진방향 x목표점임. 속도변수따로만들기
-                                        //         goal_array.data.push_back(y_goal_);
-                                        // }
-                                        // else if (left_roi_slope < 0 && left_lane_fitting.size() >= 20)
-                                        // {
-                                        //     std::cout<<"2222222"<<std::endl;
-                                        goal_array.data.clear();
-                                        goal_array.data.resize(0);
-                                        x_goal_ = 0;
-                                        y_goal_ = 0;
-                                        goal_array.data.push_back(x_goal_); //linear_vel아님 정확힌 직진방향 x목표점임. 속도변수따로만들기
-                                        goal_array.data.push_back(y_goal_);
-                                        parking_stage = 1;
-                                        go_cnt = 0;
-                                        // }
-
-                                        break;
-                                case 1:
-                                        goal_array.data.clear();
-                                        goal_array.data.resize(0);
-                                        x_goal_ = 0.1;
-                                        y_goal_ = 0;
-                                        goal_array.data.push_back(x_goal_); //linear_vel아님 정확힌 직진방향 x목표점임. 속도변수따로만들기
-                                        goal_array.data.push_back(y_goal_);
-                                        go_cnt++;
-                                        if (go_cnt > 6)
-                                        {
-                                                parking_stage = 2;
-                                                go_cnt = 0;
-                                        }
-                                        break;
-                                case 2:
-                                        goal_array.data.clear();
-                                        goal_array.data.resize(0);
-                                        x_goal_ = 0;
-                                        y_goal_ = 0;
-                                        goal_array.data.push_back(x_goal_); //linear_vel아님 정확힌 직진방향 x목표점임. 속도변수따로만들기
-                                        goal_array.data.push_back(y_goal_);
-                                        go_cnt++;
-                                        if (go_cnt > 1)
-                                        {
-                                                parking_stage = 3;
-                                                go_cnt = 0;
-                                        }
-                                        break;
-                                case 3:
-                                        goal_array.data.clear();
-                                        goal_array.data.resize(0);
-                                        x_goal_ = 0;
-                                        y_goal_ = -0.45;
-                                        goal_array.data.push_back(x_goal_); //linear_vel아님 정확힌 직진방향 x목표점임. 속도변수따로만들기
-                                        goal_array.data.push_back(y_goal_);
-                                        go_cnt++;
-                                        if (go_cnt > 12)
-                                        {
-                                                parking_stage = 4;
-                                                go_cnt = 0;
-                                        }
-                                        break;
-                                case 4:
-                                        goal_array.data.clear();
-                                        goal_array.data.resize(0);
-                                        x_goal_ = 0;
-                                        y_goal_ = 0;
-                                        goal_array.data.push_back(x_goal_); //linear_vel아님 정확힌 직진방향 x목표점임. 속도변수따로만들기
-                                        goal_array.data.push_back(y_goal_);
-                                        go_cnt++;
-                                        if (go_cnt > 2)
-                                        {
-                                                parking_stage = 5;
-                                                go_cnt = 0;
-                                        }
-                                        break;
-                                case 5:
-                                {
-
-                                        cv::Mat park_zero = cv::Mat::zeros(park_detect.size(), CV_8UC3);
-                                        std::vector<cv::Point> park_line_test;
-                                        for (int x = 80; x < 175; x++)
-                                        {
-                                                for (int y = 160; y > 70; y--)
-                                                {
-                                                        uchar *park_pt = park_detect.ptr<uchar>(y);
-                                                        uchar *parkline_data = park_zero.ptr<uchar>(y);
-                                                        if (park_pt[x] != (uchar)0)
-                                                        {
-                                                                park_line_test.push_back(cv::Point(x, y));
-                                                                parkline_data[x] = (uchar)255;
-                                                                break;
-                                                        }
-                                                }
-                                        }
-                                        int line_max = -1, line_tmp = 0;
-                                        for (int y = 140; y > 100; y--)
-                                        {
-                                                for (int i = 0; i < park_line_test.size(); i++)
-                                                {
-                                                        if (park_line_test[i].y == y)
-                                                        {
-                                                                for (int x = park_detect.cols / 2 - 30; x < park_detect.cols / 2 + 30; x++)
-                                                                {
-                                                                        if (park_line_test[i].x == x)
-                                                                        {
-                                                                                line_tmp++;
-                                                                        }
-                                                                }
-                                                        }
-                                                }
-                                                if (line_tmp > line_max)
-                                                {
-                                                        line_max = line_tmp;
-                                                        line_tmp = 0;
-                                                }
-                                        }
-                                        std::cout << "park line_tmp : " << line_tmp << std::endl;
-
-                                        go_cnt++;
-                                        if (line_max > 20)
-                                        {
-                                                parking_reliabilty++;
-                                        }
-                                        if (go_cnt > 7)
-                                        {
-                                                if (parking_reliabilty > 4)
-                                                {
-                                                        parking_stage = 6;
-                                                        go_cnt = 0;
-                                                }
-                                                else
-                                                {
-                                                        parking_stage = 13;
-                                                        go_cnt = 0;
-                                                }
-                                        }
-                                }
-                                break;
-                                case 6: //first parking area
-                                {
-                                        if (go_cnt < 16)
-                                        {
-                                                goal_array.data.clear();
-                                                goal_array.data.resize(0);
-                                                x_goal_ = 0.1;
-                                                y_goal_ = 0;
-                                                goal_array.data.push_back(x_goal_); //linear_vel아님 정확힌 직진방향 x목표점임. 속도변수따로만들기
-                                                goal_array.data.push_back(y_goal_);
-                                                go_cnt++;
-                                        }
-                                        else
-                                        {
-                                                go_cnt = 0;
-                                                goal_array.data.clear();
-                                                goal_array.data.resize(0);
-                                                x_goal_ = 0;
-                                                y_goal_ = 0;
-                                                goal_array.data.push_back(x_goal_); //linear_vel아님 정확힌 직진방향 x목표점임. 속도변수따로만들기
-                                                goal_array.data.push_back(y_goal_);
-
-                                                parking_stage = 7;
-                                        }
-                                }
-                                break;
-                                case 7: //first parking area
-                                {
-                                        if (go_cnt < 1)
-                                        {
-                                                goal_array.data.clear();
-                                                goal_array.data.resize(0);
-                                                x_goal_ = 0;
-                                                y_goal_ = 0;
-                                                goal_array.data.push_back(x_goal_); //linear_vel아님 정확힌 직진방향 x목표점임. 속도변수따로만들기
-                                                goal_array.data.push_back(y_goal_);
-                                                go_cnt++;
-                                        }
-                                        else
-                                        {
-                                                go_cnt = 0;
-                                                goal_array.data.clear();
-                                                goal_array.data.resize(0);
-                                                x_goal_ = 0;
-                                                y_goal_ = 0;
-                                                goal_array.data.push_back(x_goal_); //linear_vel아님 정확힌 직진방향 x목표점임. 속도변수따로만들기
-                                                goal_array.data.push_back(y_goal_);
-
-                                                parking_stage = 8;
-                                        }
-                                }
-                                break;
-                                case 8:
-                                        if (go_cnt < 17)
-                                        {
-                                                goal_array.data.clear();
-                                                goal_array.data.resize(0);
-                                                x_goal_ = -0.1;
-                                                y_goal_ = 0;
-                                                goal_array.data.push_back(x_goal_); //linear_vel아님 정확힌 직진방향 x목표점임. 속도변수따로만들기
-                                                goal_array.data.push_back(y_goal_);
-                                                go_cnt++;
-                                        }
-                                        else
-                                        {
-                                                go_cnt = 0;
-                                                goal_array.data.clear();
-                                                goal_array.data.resize(0);
-                                                x_goal_ = 0;
-                                                y_goal_ = 0;
-                                                goal_array.data.push_back(x_goal_); //linear_vel아님 정확힌 직진방향 x목표점임. 속도변수따로만들기
-                                                goal_array.data.push_back(y_goal_);
-                                                parking_stage = 9;
-                                        }
-                                        break;
-                                case 9:
-                                        goal_array.data.clear();
-                                        goal_array.data.resize(0);
-                                        x_goal_ = 0;
-                                        y_goal_ = 0;
-                                        goal_array.data.push_back(x_goal_); //linear_vel아님 정확힌 직진방향 x목표점임. 속도변수따로만들기
-                                        goal_array.data.push_back(y_goal_);
-                                        go_cnt++;
-                                        if (go_cnt > 2)
-                                        {
-
-                                                parking_stage = 10;
-                                                go_cnt = 0;
-                                        }
-                                        break;
-                                case 10:
-                                        goal_array.data.clear();
-                                        goal_array.data.resize(0);
-                                        x_goal_ = 0;
-                                        y_goal_ = 0.45;
-                                        goal_array.data.push_back(x_goal_); //linear_vel아님 정확힌 직진방향 x목표점임. 속도변수따로만들기
-                                        goal_array.data.push_back(y_goal_);
-                                        go_cnt++;
-                                        if (go_cnt > 12)
-                                        {
-
-                                                parking_stage = 11;
-                                                go_cnt = 0;
-                                        }
-                                        break;
-                                case 11:
-                                        goal_array.data.clear();
-                                        goal_array.data.resize(0);
-                                        x_goal_ = 0;
-                                        y_goal_ = 0;
-                                        goal_array.data.push_back(x_goal_); //linear_vel아님 정확힌 직진방향 x목표점임. 속도변수따로만들기
-                                        goal_array.data.push_back(y_goal_);
-                                        go_cnt++;
-                                        if (go_cnt > 2)
-                                        {
-                                                parking_stage = 12;
-                                                go_cnt = 0;
-                                        }
-
-                                        break;
-                                case 12:
-                                        normal_mode = true;
-                                        parking_mode = false;
-                                        parking_checked = true;
-                                        break; ///////////
-                                case 13:
-                                        goal_array.data.clear();
-                                        goal_array.data.resize(0);
-                                        x_goal_ = 0;
-                                        y_goal_ = 0;
-                                        goal_array.data.push_back(x_goal_); //linear_vel아님 정확힌 직진방향 x목표점임. 속도변수따로만들기
-                                        goal_array.data.push_back(y_goal_);
-                                        go_cnt++;
-                                        if (go_cnt > 1)
-                                        {
-                                                parking_stage = 14;
-                                                go_cnt = 0;
-                                        }
-                                        break;
-                                case 14:
-                                        goal_array.data.clear();
-                                        goal_array.data.resize(0);
-                                        x_goal_ = 0;
-                                        y_goal_ = 0.45;
-                                        goal_array.data.push_back(x_goal_); //linear_vel아님 정확힌 직진방향 x목표점임. 속도변수따로만들기
-                                        goal_array.data.push_back(y_goal_);
-                                        go_cnt++;
-                                        if (go_cnt > 16)
-                                        {
-
-                                                parking_stage = 15;
-                                                go_cnt = 0;
-                                        }
-                                        break;
-                                case 15:
-                                        goal_array.data.clear();
-                                        goal_array.data.resize(0);
-                                        x_goal_ = 0;
-                                        y_goal_ = 0;
-                                        goal_array.data.push_back(x_goal_); //linear_vel아님 정확힌 직진방향 x목표점임. 속도변수따로만들기
-                                        goal_array.data.push_back(y_goal_);
-                                        go_cnt++;
-                                        if (go_cnt > 1)
-                                        {
-                                                parking_stage = 16;
-                                                go_cnt = 0;
-                                                //
-                                        }
-                                        break;
-                                case 16:
-                                        goal_array.data.clear();
-                                        goal_array.data.resize(0);
-                                        x_goal_ = 0.1;
-                                        y_goal_ = 0;
-                                        goal_array.data.push_back(x_goal_); //linear_vel아님 정확힌 직진방향 x목표점임. 속도변수따로만들기
-                                        goal_array.data.push_back(y_goal_);
-                                        go_cnt++;
-                                        if (go_cnt > 20)
-                                        {
-                                                parking_stage = 17;
-                                                go_cnt = 0;
-                                        }
-                                        break;
-                                case 17:
-                                        goal_array.data.clear();
-                                        goal_array.data.resize(0);
-                                        x_goal_ = 0;
-                                        y_goal_ = 0;
-                                        goal_array.data.push_back(x_goal_); //linear_vel아님 정확힌 직진방향 x목표점임. 속도변수따로만들기
-                                        goal_array.data.push_back(y_goal_);
-                                        go_cnt++;
-                                        if (go_cnt > 2)
-                                        {
-                                                parking_stage = 18;
-                                                go_cnt = 0;
-                                        }
-                                        break;
-                                case 18:
-                                        goal_array.data.clear();
-                                        goal_array.data.resize(0);
-                                        x_goal_ = 0;
-                                        y_goal_ = -0.45;
-                                        goal_array.data.push_back(x_goal_); //linear_vel아님 정확힌 직진방향 x목표점임. 속도변수따로만들기
-                                        goal_array.data.push_back(y_goal_);
-                                        go_cnt++;
-                                        if (go_cnt > 16)
-                                        {
-                                                parking_stage = 19;
-                                                go_cnt = 0;
-                                        }
-                                        break;
-                                case 19:
-                                        goal_array.data.clear();
-                                        goal_array.data.resize(0);
-                                        x_goal_ = 0;
-                                        y_goal_ = 0;
-                                        goal_array.data.push_back(x_goal_); //linear_vel아님 정확힌 직진방향 x목표점임. 속도변수따로만들기
-                                        goal_array.data.push_back(y_goal_);
-                                        go_cnt++;
-                                        if (go_cnt > 1)
-                                        {
-                                                parking_stage = 20;
-                                                go_cnt = 0;
-                                        }
-                                        break;
-                                case 20:
-                                {
-                                        if (go_cnt < 13)
-                                        {
-                                                goal_array.data.clear();
-                                                goal_array.data.resize(0);
-                                                x_goal_ = 0.1;
-                                                y_goal_ = 0;
-                                                goal_array.data.push_back(x_goal_); //linear_vel아님 정확힌 직진방향 x목표점임. 속도변수따로만들기
-                                                goal_array.data.push_back(y_goal_);
-                                                go_cnt++;
-                                        }
-                                        else
-                                        {
-                                                go_cnt = 0;
-                                                goal_array.data.clear();
-                                                goal_array.data.resize(0);
-                                                x_goal_ = 0;
-                                                y_goal_ = 0;
-                                                goal_array.data.push_back(x_goal_); //linear_vel아님 정확힌 직진방향 x목표점임. 속도변수따로만들기
-                                                goal_array.data.push_back(y_goal_);
-                                                parking_stage = 21;
-                                        }
-                                }
-                                break;
-                                case 21:
-                                        goal_array.data.clear();
-                                        goal_array.data.resize(0);
-                                        x_goal_ = 0;
-                                        y_goal_ = 0;
-                                        goal_array.data.push_back(x_goal_); //linear_vel아님 정확힌 직진방향 x목표점임. 속도변수따로만들기
-                                        goal_array.data.push_back(y_goal_);
-                                        go_cnt++;
-                                        if (go_cnt > 3)
-                                        {
-                                                parking_stage = 22;
-                                                go_cnt = 0;
-                                        }
-                                        break;
-                                case 22:
-                                        if (go_cnt < 13)
-                                        {
-                                                goal_array.data.clear();
-                                                goal_array.data.resize(0);
-                                                x_goal_ = -0.1;
-                                                y_goal_ = 0;
-                                                goal_array.data.push_back(x_goal_); //linear_vel아님 정확힌 직진방향 x목표점임. 속도변수따로만들기
-                                                goal_array.data.push_back(y_goal_);
-                                                go_cnt++;
-                                        }
-                                        else
-                                        {
-                                                go_cnt = 0;
-                                                goal_array.data.clear();
-                                                goal_array.data.resize(0);
-                                                x_goal_ = 0;
-                                                y_goal_ = 0;
-                                                goal_array.data.push_back(x_goal_); //linear_vel아님 정확힌 직진방향 x목표점임. 속도변수따로만들기
-                                                goal_array.data.push_back(y_goal_);
-                                                parking_stage = 23;
-                                        }
-                                        break;
-                                case 23:
-                                        goal_array.data.clear();
-                                        goal_array.data.resize(0);
-                                        x_goal_ = 0;
-                                        y_goal_ = 0;
-                                        goal_array.data.push_back(x_goal_); //linear_vel아님 정확힌 직진방향 x목표점임. 속도변수따로만들기
-                                        goal_array.data.push_back(y_goal_);
-                                        go_cnt++;
-                                        if (go_cnt > 1)
-                                        {
-
-                                                parking_stage = 24;
-                                                go_cnt = 0;
-                                        }
-                                        break;
-                                case 24:
-                                        goal_array.data.clear();
-                                        goal_array.data.resize(0);
-                                        x_goal_ = 0;
-                                        y_goal_ = 0.45;
-                                        goal_array.data.push_back(x_goal_); //linear_vel아님 정확힌 직진방향 x목표점임. 속도변수따로만들기
-                                        goal_array.data.push_back(y_goal_);
-                                        go_cnt++;
-                                        if (go_cnt > 16)
-                                        {
-
-                                                parking_stage = 25;
-                                                go_cnt = 0;
-                                        }
-                                        break;
-                                case 25:
-                                        goal_array.data.clear();
-                                        goal_array.data.resize(0);
-                                        x_goal_ = 0;
-                                        y_goal_ = 0;
-                                        goal_array.data.push_back(x_goal_); //linear_vel아님 정확힌 직진방향 x목표점임. 속도변수따로만들기
-                                        goal_array.data.push_back(y_goal_);
-                                        go_cnt++;
-                                        if (go_cnt > 5)
-                                        {
-                                                parking_stage = 26;
-                                        }
-
-                                        break;
-                                case 26:
-                                        normal_mode = true;
-                                        parking_mode = false;
-                                        parking_checked = true;
-                                        go_cnt = 0;
-                                        break;
-                                }
-                        }
-
-                        if (blocking_bar_mode && !parking_mode && !signal_lamp_mode && !tunnel_mode)
-                        {
-                                switch (blocking_bar_stage)
-                                {
-                                case 0:
-                                        goal_array.data.clear();
-                                        goal_array.data.resize(0);
-                                        x_goal_ = 0.0;
-                                        y_goal_ = 0;
-                                        goal_array.data.push_back(x_goal_); //linear_vel아님 정확힌 직진방향 x목표점임. 속도변수따로만들기
-                                        goal_array.data.push_back(y_goal_);
-                                        go_cnt++;
-                                        if (go_cnt > 3)
-                                        {
-                                                blocking_bar_stage = 1;
-                                                go_cnt = 0;
-                                        }
-                                        break;
-                                case 1:
-                                        goal_array.data.clear();
-                                        goal_array.data.resize(0);
-                                        x_goal_ = 0;
-                                        y_goal_ = 0;
-                                        goal_array.data.push_back(x_goal_); //linear_vel아님 정확힌 직진방향 x목표점임. 속도변수따로만들기
-                                        goal_array.data.push_back(y_goal_);
-                                        go_cnt++;
-                                        if (go_cnt > 10 && !detectBlockingBar(red_hsv))
-                                        {
-                                                blocking_bar_stage = 3;
-                                                go_cnt = 0;
-                                        }
-                                        else if (go_cnt > 10 && detectBlockingBar(red_hsv))
-                                        {
-                                                blocking_bar_stage = 5;
-                                                go_cnt = 0;
-                                        }
-                                        break;
-                                case 2:
-                                        goal_array.data.clear();
-                                        goal_array.data.resize(0);
-                                        x_goal_ = 0;
-                                        y_goal_ = 0;
-                                        goal_array.data.push_back(x_goal_);
-                                        goal_array.data.push_back(y_goal_);
-                                        go_cnt++;
-                                        if (go_cnt > 1)
-                                        {
-                                                blocking_bar_stage = 3;
-                                                go_cnt = 0;
-                                        }
-                                        break;
-                                case 3:
-                                        goal_array.data.clear();
-                                        goal_array.data.resize(0);
-                                        x_goal_ = 0;
-                                        y_goal_ = 0;
-                                        goal_array.data.push_back(x_goal_);
-                                        goal_array.data.push_back(y_goal_);
-                                        go_cnt++;
-                                        if (go_cnt > 2)
-                                        {
-                                                blocking_bar_stage = 4;
-                                                go_cnt = 0;
-                                        }
-                                        break;
-                                case 4:
-                                        normal_mode = true;
-                                        blocking_bar_checked = true;
-                                        blocking_bar_mode = false;
-                                        go_cnt = 0;
-                                        break;
-                                case 5:
-                                        goal_array.data.clear();
-                                        goal_array.data.resize(0);
-                                        x_goal_ = 0;
-                                        y_goal_ = 0;
-                                        goal_array.data.push_back(x_goal_);
-                                        goal_array.data.push_back(y_goal_);
-                                        go_cnt++;
-                                        if (go_cnt > 1)
-                                        {
-                                                blocking_bar_stage = 6;
-                                                go_cnt = 0;
-                                        }
-                                        break;
-                                case 6:
-                                        goal_array.data.clear();
-                                        goal_array.data.resize(0);
-                                        x_goal_ = 0;
-                                        y_goal_ = 0;
-                                        goal_array.data.push_back(x_goal_); //linear_vel아님 정확힌 직진방향 x목표점임. 속도변수따로만들기
-                                        goal_array.data.push_back(y_goal_);
-                                        go_cnt++;
-                                        if (go_cnt > 30 && !detectBlockingBar(red_hsv))
-                                        {
-                                                blocking_bar_stage = 2;
-                                                go_cnt = 0;
-                                        }
-                                        else if (go_cnt > 30 && detectBlockingBar(red_hsv))
-                                        {
-                                                go_cnt = 0;
-                                                blocking_bar_mode = 0;
-                                                blocking_bar_checked = false;
-                                                blocking_bar_stage = 0;
-                                        }
-                                        break;
-                                }
                         }
 
                         if (signal_lamp_mode && !parking_mode && !blocking_bar_mode && !tunnel_mode)
@@ -1816,6 +1388,629 @@ void InitImgObjectforROS::imgCb(const sensor_msgs::ImageConstPtr &img_msg)
                                 //         break;
                                 }
                         }
+                        //  cv::Mat ss = frame.clone();
+                        if ((left_direction_mode || right_direction_mode) && !parking_mode && !blocking_bar_mode && !signal_lamp_mode && !tunnel_mode)
+                        {
+                                
+                                switch (two_direction_stage)
+                                {
+                                        case 0:
+                                                go_cnt = 0;
+                                                goal_array.data.clear();
+                                                goal_array.data.resize(0);
+                                                x_goal_ = 1.0;
+                                                y_goal_ = 0;
+                                                goal_array.data.push_back(x_goal_); 
+                                                goal_array.data.push_back(y_goal_);
+                                                if(left_direction_mode){two_direction_stage = 1;}
+                                                else if(right_direction_mode){two_direction_stage = 4;}
+                                                break;
+                                        case 1: 
+                                                goal_array.data.clear();
+                                                goal_array.data.resize(0);
+                                                x_goal_ = 1.0;
+                                                y_goal_ = 0;
+                                                goal_array.data.push_back(x_goal_); 
+                                                goal_array.data.push_back(y_goal_);
+                                                go_cnt++;
+                                                if(go_cnt>5){
+                                                        two_direction_stage = 2;
+                                                        go_cnt = 0;
+                                                }
+                                                break;
+                                        case 2: 
+                                                goal_array.data.clear();
+                                                goal_array.data.resize(0);
+                                                x_goal_ = 0;
+                                                y_goal_ = 0.45;
+                                                goal_array.data.push_back(x_goal_); 
+                                                goal_array.data.push_back(y_goal_);
+                                                go_cnt++;
+                                                if(go_cnt>2){
+                                                        two_direction_stage = 3;
+                                                        go_cnt = 0;
+                                                }
+                                                break;
+                                        case 3: 
+                                                goal_array.data.clear();
+                                                goal_array.data.resize(0);
+                                                x_goal_ = 0;
+                                                y_goal_ = 0;
+                                                goal_array.data.push_back(x_goal_); 
+                                                goal_array.data.push_back(y_goal_);
+                                                go_cnt = 0;
+                                                left_direction_mode = false;
+                                                two_direction_checked = true;
+                                                normal_mode = true;
+                                                break;
+                                        case 4: 
+                                                goal_array.data.clear();
+                                                goal_array.data.resize(0);
+                                                x_goal_ = 1.0;
+                                                y_goal_ = 0;
+                                                goal_array.data.push_back(x_goal_); 
+                                                goal_array.data.push_back(y_goal_);
+                                                go_cnt++;
+                                                if(go_cnt>5){
+                                                        two_direction_stage = 5;
+                                                        go_cnt = 0;
+                                                }
+                                                break;
+                                        case 5: 
+                                                goal_array.data.clear();
+                                                goal_array.data.resize(0);
+                                                x_goal_ = 0;
+                                                y_goal_ = -0.45;
+                                                goal_array.data.push_back(x_goal_); 
+                                                goal_array.data.push_back(y_goal_);
+                                                go_cnt++;
+                                                if(go_cnt>2){
+                                                        two_direction_stage = 6;
+                                                        go_cnt = 0;
+                                                }
+                                                break;
+                                        case 6: 
+                                                goal_array.data.clear();
+                                                goal_array.data.resize(0);
+                                                x_goal_ = 0;
+                                                y_goal_ = 0;
+                                                goal_array.data.push_back(x_goal_); 
+                                                goal_array.data.push_back(y_goal_);
+                                                go_cnt = 0;
+                                                right_direction_mode = false;
+                                                two_direction_checked = true;
+                                                normal_mode = true;
+                                                break;
+                                        
+                                }
+                                
+                        }
+                        if (parking_mode && !blocking_bar_mode && !signal_lamp_mode && !tunnel_mode)
+                        {
+                                cv::Mat parked = origin_white_hsv.clone();
+
+                                cv::Mat park_zero = cv::Mat::zeros(origin_white_hsv.size(), CV_8UC1);
+                                std::cout << "parking stage : " << parking_stage << std::endl;
+                                switch (parking_stage)
+                                {
+                                case 0:
+                                        goal_array.data.clear();
+                                        goal_array.data.resize(0);
+                                        x_goal_ = 1.0;
+                                        y_goal_ = 0;
+                                        go_cnt++;
+                                        goal_array.data.push_back(x_goal_); //linear_vel아님 정확힌 직진방향 x목표점임. 속도변수따로만들기
+                                        goal_array.data.push_back(y_goal_);
+                                        if (go_cnt > 10)
+                                        {
+                                                parking_stage = 1;
+                                                go_cnt = 0;
+                                        }
+                                        break;
+                                case 1:
+                                        goal_array.data.clear();
+                                        goal_array.data.resize(0);
+                                        x_goal_ = 0;
+                                        y_goal_ = 0.45;
+                                        goal_array.data.push_back(x_goal_); //linear_vel아님 정확힌 직진방향 x목표점임. 속도변수따로만들기
+                                        goal_array.data.push_back(y_goal_);
+                                        go_cnt++;
+                                        if (go_cnt > 5)
+                                        {
+                                                parking_stage = 2;
+                                                go_cnt = 0;
+                                        }
+                                        break;
+                                case 2: //////////////////////////// no yellow detection
+                                {
+                                        bool doubling_flag = false;
+                                        std::cout << "enter parking : 'only left interval is not -1'\n pre left roi slope : " << pre_left_roi_slope << ", left slope : " << left_roi_slope
+                                                  << ",\n pre right roi slope : " << pre_right_roi_slope << ", right slope : " << right_roi_slope << std::endl;
+
+                                        if ((left_interval > left_min_interval && left_interval < left_max_interval))
+                                        {
+                                                if (abs(left_roi_slope) < 0.7)
+                                                {
+                                                        doubling_flag = true;
+                                                }
+                                                else
+                                                {
+                                                        //go straight condition
+                                                        y_goal_ = 0;
+                                                }
+                                        }
+                                        else
+                                        {
+                                                //** left lane tracking condition
+                                                if (left_interval <= left_min_interval)
+                                                { //need right rotation(ang_vel<0 : right rotation)
+                                                        if (abs(left_interval - left_min_interval) <= 15)
+                                                                y_goal_ = -0.19;
+                                                        else if (abs(left_interval - left_min_interval) >= 15 && abs(left_interval - left_min_interval) < 30)
+                                                                y_goal_ = -0.24;
+                                                        else
+                                                                y_goal_ = -0.28;
+                                                }
+                                                else
+                                                { //need left rotation(ang_vel>0 : left rotation)
+                                                        if (abs(left_interval - left_max_interval) <= 15)
+                                                                y_goal_ = 0.15;
+                                                        else if (abs(left_interval - left_max_interval) >= 15 && abs(left_interval - left_max_interval) < 30)
+                                                                y_goal_ = 0.21;
+                                                        else
+                                                                y_goal_ = 0.26;
+                                                }
+                                        }
+                                        goal_array.data.clear();
+                                        goal_array.data.resize(0);
+                                        if (left_interval == -1)
+                                        {
+                                                x_goal_ = 0;
+                                                y_goal_ = 0;
+                                                parking_stage = 3;
+                                                go_cnt = 0;
+                                        }
+                                        else
+                                        {
+                                                x_goal_ = 1.0;
+                                        }
+                                        goal_array.data.push_back(x_goal_); //linear_vel아님 정확힌 직진방향 x목표점임. 속도변수따로만들기
+                                        goal_array.data.push_back(y_goal_);
+                                        break;
+                                }
+                                case 3:
+                                        goal_array.data.clear();
+                                        goal_array.data.resize(0);
+                                        x_goal_ = 1.0;
+                                        y_goal_ = 0;
+                                        goal_array.data.push_back(x_goal_); //linear_vel아님 정확힌 직진방향 x목표점임. 속도변수따로만들기
+                                        goal_array.data.push_back(y_goal_);
+                                        go_cnt++;
+                                        if (go_cnt > 4)
+                                        {
+                                                parking_stage = 4;
+                                                go_cnt = 0;
+                                        }
+                                        break;
+                                case 4:
+                                        goal_array.data.clear();
+                                        goal_array.data.resize(0);
+                                        x_goal_ = 0;
+                                        y_goal_ = 0;
+                                        goal_array.data.push_back(x_goal_); //linear_vel아님 정확힌 직진방향 x목표점임. 속도변수따로만들기
+                                        goal_array.data.push_back(y_goal_);
+                                        parking_stage = 5;
+                                        go_cnt = 0;
+                                        break;
+                                case 5:
+                                {
+                                        goal_array.data.clear();
+                                        goal_array.data.resize(0);
+                                        x_goal_ = 0;
+                                        y_goal_ = 0.45;
+                                        goal_array.data.push_back(x_goal_); //linear_vel아님 정확힌 직진방향 x목표점임. 속도변수따로만들기
+                                        goal_array.data.push_back(y_goal_);
+                                        go_cnt++;
+                                        if (go_cnt > 5)
+                                        {
+                                                parking_stage = 6;
+                                                go_cnt = 0;
+                                        }
+                                        break;
+                                }
+                                case 6: //first parking area
+                                {
+                                        goal_array.data.clear();
+                                        goal_array.data.resize(0);
+                                        x_goal_ = 0;
+                                        y_goal_ = 0;
+                                        goal_array.data.push_back(x_goal_); //linear_vel아님 정확힌 직진방향 x목표점임. 속도변수따로만들기
+                                        goal_array.data.push_back(y_goal_);
+                                        go_cnt++;
+                                        if (go_cnt > 2)
+                                        {
+                                                int object_score = 0;
+                                                for (int i = 0; i < 10; i++)
+                                                {
+                                                        if ((scan_array[359 - i] >= 0 || scan_array[i] >= 0) && (scan_array[359 - i] < 0.6 || scan_array[i] < 0.6))
+                                                        {
+                                                                object_score++;
+                                                        }
+                                                }
+                                                if (object_score == 0)
+                                                {
+                                                        parking_stage = 7;
+                                                        go_cnt = 0;
+                                                }
+                                                else
+                                                {
+                                                        parking_stage = 8;
+                                                        go_cnt = 0;
+                                                }
+                                        }
+                                        break;
+                                }
+                                case 7: //left parking area
+                                {
+                                        goal_array.data.clear();
+                                        goal_array.data.resize(0);
+                                        x_goal_ = 1.0; //enter parking lot
+                                        y_goal_ = 0;
+                                        goal_array.data.push_back(x_goal_); //linear_vel아님 정확힌 직진방향 x목표점임. 속도변수따로만들기
+                                        goal_array.data.push_back(y_goal_);
+                                        go_cnt++;
+                                        if (go_cnt > 5 && go_cnt <= 7)
+                                        {
+                                                goal_array.data.clear();
+                                                goal_array.data.resize(0);
+                                                x_goal_ = 0;
+                                                y_goal_ = 0;
+                                                goal_array.data.push_back(x_goal_); //linear_vel아님 정확힌 직진방향 x목표점임. 속도변수따로만들기
+                                                goal_array.data.push_back(y_goal_);
+                                        }
+                                        else if (go_cnt > 7 && go_cnt <= 12)
+                                        {
+                                                goal_array.data.clear();
+                                                goal_array.data.resize(0);
+                                                x_goal_ = -1.0; //escape parking lot
+                                                y_goal_ = 0;
+                                                goal_array.data.push_back(x_goal_); //linear_vel아님 정확힌 직진방향 x목표점임. 속도변수따로만들기
+                                                goal_array.data.push_back(y_goal_);
+                                        }
+                                        else if (go_cnt > 12 && go_cnt <= 17)
+                                        {
+                                                goal_array.data.clear();
+                                                goal_array.data.resize(0);
+                                                x_goal_ = 0;
+                                                y_goal_ = 0.45;
+                                                goal_array.data.push_back(x_goal_); //linear_vel아님 정확힌 직진방향 x목표점임. 속도변수따로만들기
+                                                goal_array.data.push_back(y_goal_);
+                                        }
+                                        else if (go_cnt > 17 && go_cnt <= 18)
+                                        {
+                                                goal_array.data.clear();
+                                                goal_array.data.resize(0);
+                                                x_goal_ = 0;
+                                                y_goal_ = 0;
+                                                goal_array.data.push_back(x_goal_); //linear_vel아님 정확힌 직진방향 x목표점임. 속도변수따로만들기
+                                                goal_array.data.push_back(y_goal_);
+                                        }
+                                        else if (go_cnt > 18)
+                                        {
+                                                goal_array.data.clear();
+                                                goal_array.data.resize(0);
+                                                x_goal_ = 0;
+                                                y_goal_ = 0;
+                                                parking_stage = 9;
+                                                go_cnt = 0;
+                                                goal_array.data.push_back(x_goal_);
+                                                goal_array.data.push_back(y_goal_);
+                                        }
+                                        break;
+                                }
+                                case 8:
+                                {
+                                        goal_array.data.clear();
+                                        goal_array.data.resize(0);
+                                        x_goal_ = -1.0;
+                                        y_goal_ = 0;
+                                        goal_array.data.push_back(x_goal_); //linear_vel아님 정확힌 직진방향 x목표점임. 속도변수따로만들기
+                                        goal_array.data.push_back(y_goal_);
+                                        go_cnt++;
+                                        if (go_cnt > 5 && go_cnt <= 7)
+                                        {
+                                                goal_array.data.clear();
+                                                goal_array.data.resize(0);
+                                                x_goal_ = 0;
+                                                y_goal_ = 0;
+                                                goal_array.data.push_back(x_goal_); //linear_vel아님 정확힌 직진방향 x목표점임. 속도변수따로만들기
+                                                goal_array.data.push_back(y_goal_);
+                                        }
+                                        else if (go_cnt > 7 && go_cnt <= 12)
+                                        {
+                                                goal_array.data.clear();
+                                                goal_array.data.resize(0);
+                                                x_goal_ = 1.0;
+                                                y_goal_ = 0;
+                                                goal_array.data.push_back(x_goal_); //linear_vel아님 정확힌 직진방향 x목표점임. 속도변수따로만들기
+                                                goal_array.data.push_back(y_goal_);
+                                        }
+                                        else if (go_cnt > 12 && go_cnt <= 17)
+                                        {
+                                                goal_array.data.clear();
+                                                goal_array.data.resize(0);
+                                                x_goal_ = 0;
+                                                y_goal_ = 0.45;
+                                                goal_array.data.push_back(x_goal_); //linear_vel아님 정확힌 직진방향 x목표점임. 속도변수따로만들기
+                                                goal_array.data.push_back(y_goal_);
+                                        }
+                                        else if (go_cnt > 17 && go_cnt <= 18)
+                                        {
+                                                goal_array.data.clear();
+                                                goal_array.data.resize(0);
+                                                x_goal_ = 0;
+                                                y_goal_ = 0;
+                                                goal_array.data.push_back(x_goal_); //linear_vel아님 정확힌 직진방향 x목표점임. 속도변수따로만들기
+                                                goal_array.data.push_back(y_goal_);
+                                        }
+                                        else if (go_cnt > 18)
+                                        {
+                                                goal_array.data.clear();
+                                                goal_array.data.resize(0);
+                                                x_goal_ = 0;
+                                                y_goal_ = 0;
+                                                parking_stage = 9;
+                                                go_cnt = 0;
+                                                goal_array.data.push_back(x_goal_);
+                                                goal_array.data.push_back(y_goal_);
+                                        }
+                                        break;
+                                }
+                                case 9:
+                                {
+
+                                        if (go_cnt == 0)
+                                        {
+                                                bool doubling_flag = false;
+                                                std::cout << "escape parking right : 'only left interval is not -1'\n pre left roi slope : " << pre_left_roi_slope << ", left slope : " << left_roi_slope
+                                                          << ",\n pre right roi slope : " << pre_right_roi_slope << ", right slope : " << right_roi_slope << std::endl;
+
+                                                if ((left_interval > left_min_interval && left_interval < left_max_interval))
+                                                {
+                                                        if (abs(left_roi_slope) < 0.7)
+                                                        {
+                                                                doubling_flag = true;
+                                                        }
+                                                        else
+                                                        {
+                                                                //go straight condition
+                                                                y_goal_ = 0;
+                                                        }
+                                                }
+                                                else
+                                                {
+                                                        //** left lane tracking condition
+                                                        if (left_interval <= left_min_interval)
+                                                        { //need right rotation(ang_vel<0 : right rotation)
+                                                                if (abs(left_interval - left_min_interval) <= 15)
+                                                                        y_goal_ = -0.19;
+                                                                else if (abs(left_interval - left_min_interval) >= 15 && abs(left_interval - left_min_interval) < 30)
+                                                                        y_goal_ = -0.24;
+                                                                else
+                                                                        y_goal_ = -0.28;
+                                                        }
+                                                        else
+                                                        { //need left rotation(ang_vel>0 : left rotation)
+                                                                if (abs(left_interval - left_max_interval) <= 15)
+                                                                        y_goal_ = 0.15;
+                                                                else if (abs(left_interval - left_max_interval) >= 15 && abs(left_interval - left_max_interval) < 30)
+                                                                        y_goal_ = 0.21;
+                                                                else
+                                                                        y_goal_ = 0.26;
+                                                        }
+                                                }
+                                                if ((abs(left_roi_slope) != 10) || doubling_flag)
+                                                {
+                                                        if (left_roi_slope != 11)
+                                                        {
+                                                                if (abs(left_roi_slope) <= 2)
+                                                                {
+                                                                        if (abs(left_roi_slope) >= 0.75)
+                                                                        {
+                                                                                y_goal_ = 0;
+                                                                        }
+                                                                        else if (abs(left_roi_slope) < 0.75 && abs(left_roi_slope) >= 0.6)
+                                                                        {
+                                                                                y_goal_ = -0.19;
+                                                                        }
+                                                                        else if (abs(left_roi_slope) < 0.6 && abs(left_roi_slope) >= 0.5)
+                                                                        {
+                                                                                y_goal_ = -0.24;
+                                                                        }
+                                                                        else if (abs(left_roi_slope) < 0.5 && abs(left_roi_slope) >= 0.4)
+                                                                        {
+                                                                                y_goal_ = -0.28;
+                                                                        }
+                                                                        else if (abs(left_roi_slope) < 0.4 && abs(left_roi_slope) >= 0.3)
+                                                                        {
+                                                                                y_goal_ = -0.31;
+                                                                        }
+                                                                        else
+                                                                        {
+                                                                                y_goal_ = -0.33;
+                                                                        }
+                                                                }
+                                                        }
+                                                        else
+                                                        {
+                                                                ///***right line presents doubling to right but left line has no info***///
+                                                                y_goal_ = 0.26;
+                                                        }
+                                                }
+
+                                                if (left_interval == -1)
+                                                {
+                                                        x_goal_ = 0;
+                                                        y_goal_ = 0;
+                                                        go_cnt = 6;
+                                                }
+                                                else
+                                                {
+                                                        x_goal_ = 1.0;
+                                                }
+                                        }
+                                        else if (go_cnt > 5 && go_cnt <= 7)
+                                        {
+                                                x_goal_ = 1.0;
+                                                y_goal_ = 0;
+                                                go_cnt++;
+                                        }
+                                        else if (go_cnt > 7 && go_cnt <= 8)
+                                        {
+                                                x_goal_ = 0;
+                                                y_goal_ = 0;
+                                                go_cnt++;
+                                        }
+                                        else if (go_cnt > 8 && go_cnt <= 10)
+                                        {
+                                                x_goal_ = 0;
+                                                y_goal_ = 0.45;
+                                                go_cnt++;
+                                        }
+                                        else if (go_cnt > 10 && go_cnt <= 12)
+                                        {
+                                                x_goal_ = 1.0;
+                                                y_goal_ = 0;
+                                                go_cnt++;
+                                        }
+                                        else if (go_cnt > 12)
+                                        {
+                                                x_goal_ = 0;
+                                                y_goal_ = 0;
+                                                go_cnt = 0;
+                                                parking_mode = false;
+                                                parking_checked = true;
+                                                normal_mode = true;
+                                        }
+                                        goal_array.data.clear();
+                                        goal_array.data.resize(0);
+                                        goal_array.data.push_back(x_goal_);
+                                        goal_array.data.push_back(y_goal_);
+                                        break;
+                                }
+                                }
+                        }
+
+                        if (blocking_bar_mode && !parking_mode && !signal_lamp_mode && !tunnel_mode)
+                        {
+                                switch (blocking_bar_stage)
+                                {
+                                case 0:
+                                        goal_array.data.clear();
+                                        goal_array.data.resize(0);
+                                        x_goal_ = 0.0;
+                                        y_goal_ = 0;
+                                        goal_array.data.push_back(x_goal_); //linear_vel아님 정확힌 직진방향 x목표점임. 속도변수따로만들기
+                                        goal_array.data.push_back(y_goal_);
+                                        go_cnt++;
+                                        if (go_cnt > 3)
+                                        {
+                                                blocking_bar_stage = 1;
+                                                go_cnt = 0;
+                                        }
+                                        break;
+                                case 1:
+                                        goal_array.data.clear();
+                                        goal_array.data.resize(0);
+                                        x_goal_ = 0;
+                                        y_goal_ = 0;
+                                        goal_array.data.push_back(x_goal_); //linear_vel아님 정확힌 직진방향 x목표점임. 속도변수따로만들기
+                                        goal_array.data.push_back(y_goal_);
+                                        go_cnt++;
+                                        if (go_cnt > 10 && !detectBlockingBar(red_hsv))
+                                        {
+                                                blocking_bar_stage = 3;
+                                                go_cnt = 0;
+                                        }
+                                        else if (go_cnt > 10 && detectBlockingBar(red_hsv))
+                                        {
+                                                blocking_bar_stage = 5;
+                                                go_cnt = 0;
+                                        }
+                                        break;
+                                case 2:
+                                        goal_array.data.clear();
+                                        goal_array.data.resize(0);
+                                        x_goal_ = 0;
+                                        y_goal_ = 0;
+                                        goal_array.data.push_back(x_goal_);
+                                        goal_array.data.push_back(y_goal_);
+                                        go_cnt++;
+                                        if (go_cnt > 1)
+                                        {
+                                                blocking_bar_stage = 3;
+                                                go_cnt = 0;
+                                        }
+                                        break;
+                                case 3:
+                                        goal_array.data.clear();
+                                        goal_array.data.resize(0);
+                                        x_goal_ = 0;
+                                        y_goal_ = 0;
+                                        goal_array.data.push_back(x_goal_);
+                                        goal_array.data.push_back(y_goal_);
+                                        go_cnt++;
+                                        if (go_cnt > 2)
+                                        {
+                                                blocking_bar_stage = 4;
+                                                go_cnt = 0;
+                                        }
+                                        break;
+                                case 4:
+                                        normal_mode = true;
+                                        blocking_bar_checked = true;
+                                        blocking_bar_mode = false;
+                                        go_cnt = 0;
+                                        break;
+                                case 5:
+                                        goal_array.data.clear();
+                                        goal_array.data.resize(0);
+                                        x_goal_ = 0;
+                                        y_goal_ = 0;
+                                        goal_array.data.push_back(x_goal_);
+                                        goal_array.data.push_back(y_goal_);
+                                        go_cnt++;
+                                        if (go_cnt > 1)
+                                        {
+                                                blocking_bar_stage = 6;
+                                                go_cnt = 0;
+                                        }
+                                        break;
+                                case 6:
+                                        goal_array.data.clear();
+                                        goal_array.data.resize(0);
+                                        x_goal_ = 0;
+                                        y_goal_ = 0;
+                                        goal_array.data.push_back(x_goal_); //linear_vel아님 정확힌 직진방향 x목표점임. 속도변수따로만들기
+                                        goal_array.data.push_back(y_goal_);
+                                        go_cnt++;
+                                        if (go_cnt > 30 && !detectBlockingBar(red_hsv))
+                                        {
+                                                blocking_bar_stage = 2;
+                                                go_cnt = 0;
+                                        }
+                                        else if (go_cnt > 30 && detectBlockingBar(red_hsv))
+                                        {
+                                                go_cnt = 0;
+                                                blocking_bar_mode = 0;
+                                                blocking_bar_checked = false;
+                                                blocking_bar_stage = 0;
+                                        }
+                                        break;
+                                }
+                        }
+
+                        
 
                         ////*Restore birdeyeview img to origin view*////
                         restoreImgWithLangeMerge(callane, frame, yellow_labeling, white_labeling, mergelane);
@@ -3107,97 +3302,94 @@ int InitImgObjectforROS::checkDirectionWithFlann(cv::Mat &src, int min_hessian)
         cv::Mat left_turn_src = cv::imread("/home/seuleee/Pictures/left_turn_t1.jpg", cv::IMREAD_GRAYSCALE);
         cv::Mat right_turn_src = cv::imread("/home/seuleee/Pictures/right_turn_t2.jpg", cv::IMREAD_GRAYSCALE);
         cv::Mat input_src = src.clone();
-        cv::cvtColor(input_src, input_src, CV_BGR2GRAY);
-        cv::Mat descriptors_input, descriptors_left_turn, descriptors_right_turn;
+        cv::Mat blur_input_src;
+        cv::GaussianBlur(input_src, blur_input_src, cv::Size(0,0), 1 );
+        cv::addWeighted(input_src, 2.5, blur_input_src, -1.5, 1, input_src);//for sharpning
+        
+        cv::Mat descriptors_left_turn, descriptors_right_turn, descriptors_input;
 
         cv::Ptr<cv::xfeatures2d::SURF> detector = cv::xfeatures2d::SURF::create(min_hessian);
-        std::vector<cv::KeyPoint> keypoints_input, keypoints_left_turn, keypoints_right_turn;
-        
-        detector->detectAndCompute(input_src, cv::noArray(), keypoints_input, descriptors_input);               
+        std::vector<cv::KeyPoint> keypoints_left_turn, keypoints_right_turn, keypoints_input;
+                   
         detector->detectAndCompute(left_turn_src, cv::noArray(), keypoints_left_turn, descriptors_left_turn);
         detector->detectAndCompute(right_turn_src, cv::noArray(), keypoints_right_turn, descriptors_right_turn);
-
+        detector->detectAndCompute(input_src, cv::noArray(), keypoints_input, descriptors_input); 
         
-
         cv::Ptr<cv::DescriptorMatcher> matcher1 = cv::DescriptorMatcher::create(cv::DescriptorMatcher::FLANNBASED);
         cv::Ptr<cv::DescriptorMatcher> matcher2 = cv::DescriptorMatcher::create(cv::DescriptorMatcher::FLANNBASED);
         std::vector<std::vector<cv::DMatch>> knn_matches_left, knn_matches_right;
-        if(descriptors_input.size >= descriptors_left_turn.size){
-                matcher1->knnMatch(descriptors_left_turn, descriptors_input, knn_matches_left, 2);
-        }
-        else{
-                matcher1->knnMatch(descriptors_input,descriptors_left_turn,  knn_matches_left, 2);
-        }
 
-        if(descriptors_input.size >= descriptors_right_turn.size){
+        bool left_possible = false;
+        if (keypoints_input.size() >= 2 && keypoints_left_turn.size() >= 2)
+        {
+                left_possible = true;
+                matcher1->knnMatch(descriptors_left_turn, descriptors_input, knn_matches_left, 2);
+        
+        }
+        
+        bool right_possible = false;
+        if (keypoints_input.size() >= 2 && keypoints_right_turn.size() >= 2)
+        {
+                right_possible = true;
                 matcher2->knnMatch(descriptors_right_turn, descriptors_input, knn_matches_right, 2);
         }
-        else{
-                matcher2->knnMatch(descriptors_input,descriptors_right_turn,  knn_matches_right, 2);
+        if(!left_possible && !right_possible){
+                return_val = false;
+                return return_val;
         }
-
 
         const float ratio_thresh = 0.7f;
         if(for_gui){
                 std::vector<cv::DMatch> good_matches_left, good_matches_right;
-                for (size_t i = 0; i < knn_matches_left.size(); i++)
-                {
-                        if (knn_matches_left[i][0].distance < ratio_thresh * knn_matches_left[i][1].distance)
+                if(left_possible){
+                        for (size_t i = 0; i < knn_matches_left.size(); i++)
                         {
-                                good_matches_left.push_back(knn_matches_left[i][0]);
+                                if (knn_matches_left[i][0].distance < ratio_thresh * knn_matches_left[i][1].distance)
+                                {
+                                        good_matches_left.push_back(knn_matches_left[i][0]);
+                                }
                         }
                 }
-                for (size_t i = 0; i < knn_matches_right.size(); i++)
-                {
-                        if (knn_matches_right[i][0].distance < ratio_thresh * knn_matches_right[i][1].distance)
+                if(right_possible){
+                        for (size_t i = 0; i < knn_matches_right.size(); i++)
                         {
-                                good_matches_right.push_back(knn_matches_right[i][0]);
+                                if (knn_matches_right[i][0].distance < ratio_thresh * knn_matches_right[i][1].distance)
+                                {
+                                        good_matches_right.push_back(knn_matches_right[i][0]);
+                                }
                         }
                 }
+                
                 cv::Mat img_matches;
                 if(good_matches_left.size() > good_matches_right.size()){
-
-                        if(descriptors_input.size >= descriptors_left_turn.size){
-                               cv::drawMatches(left_turn_src, keypoints_left_turn, input_src, keypoints_input, good_matches_left, img_matches,
-                                               cv::Scalar::all(-1), cv::Scalar::all(-1), std::vector<char>(), cv::DrawMatchesFlags::NOT_DRAW_SINGLE_POINTS);
-                        }
-                        else{
-                                cv::drawMatches(input_src, keypoints_input, left_turn_src, keypoints_left_turn, good_matches_left, img_matches,
-                                               cv::Scalar::all(-1), cv::Scalar::all(-1), std::vector<char>(), cv::DrawMatchesFlags::NOT_DRAW_SINGLE_POINTS);
-                        }
-                        // cv::drawMatches(left_turn_src, keypoints_left_turn, input_src, keypoints_input, good_matches_left, img_matches,
-                        // cv::Scalar::all(-1), cv::Scalar::all(-1), std::vector<char>(), cv::DrawMatchesFlags::NOT_DRAW_SINGLE_POINTS);
-                        if(good_matches_left.size() > 3){
+                        if(left_possible && good_matches_left.size() >= 5){
+                                cv::drawMatches(left_turn_src, keypoints_left_turn, input_src, keypoints_input, good_matches_left, img_matches,
+                                                cv::Scalar::all(-1), cv::Scalar::all(-1), std::vector<char>(), cv::DrawMatchesFlags::NOT_DRAW_SINGLE_POINTS);
                                 return_val = -1;
-                                printf("*******************************************************left turn !!!!\n");   
+                                //printf("*******************************************************left turn !!!!\n");   
+                                
+                                
+                                printf("good match left size : %d\n",good_matches_left.size());
+                                cv::imshow("surf keypoints", img_matches);
                         }
                         else{
-                                return_val = 0;
+                                        return_val = 0;
                         }
-                        printf("good match left size : %d\n",good_matches_left.size());
-                        cv::imshow("surf keypoints", img_matches);
                 }
                 else if(good_matches_left.size() < good_matches_right.size()){
-                        if(descriptors_input.size >= descriptors_right_turn.size){
-                               cv::drawMatches(right_turn_src, keypoints_right_turn, input_src, keypoints_input, good_matches_right, img_matches,
-                                               cv::Scalar::all(-1), cv::Scalar::all(-1), std::vector<char>(), cv::DrawMatchesFlags::NOT_DRAW_SINGLE_POINTS);
+                        if(right_possible && good_matches_right.size() >= 5){
+                                cv::drawMatches(right_turn_src, keypoints_right_turn, input_src, keypoints_input, good_matches_right, img_matches,
+                                                cv::Scalar::all(-1), cv::Scalar::all(-1), std::vector<char>(), cv::DrawMatchesFlags::NOT_DRAW_SINGLE_POINTS);
+                                return_val = 1;
+                                //printf("*******************************************************right turn !!!!\n");
+                                
+                                printf("good match right size : %d\n",good_matches_right.size());
+                                cv::imshow("surf keypoints", img_matches);
                         }
                         else{
-                                cv::drawMatches(input_src, keypoints_input, right_turn_src, keypoints_right_turn, good_matches_right, img_matches,
-                                               cv::Scalar::all(-1), cv::Scalar::all(-1), std::vector<char>(), cv::DrawMatchesFlags::NOT_DRAW_SINGLE_POINTS);
+                                        return_val = 0;
                         }
                         
-                        // cv::drawMatches(right_turn_src, keypoints_right_turn, input_src, keypoints_input,  good_matches_right, img_matches,
-                        // cv::Scalar::all(-1), cv::Scalar::all(-1), std::vector<char>(), cv::DrawMatchesFlags::NOT_DRAW_SINGLE_POINTS);
-                        if(good_matches_right.size()> 3){
-                                return_val = 1;
-                                printf("*******************************************************right turn !!!!\n");
-                        }
-                        else{
-                                return_val = 0;
-                        }
-                        printf("good match right size : %d\n",good_matches_right.size());
-                        cv::imshow("surf keypoints", img_matches);
                 }
                 else{
                         printf("Both good matches size that left turn and right turn is same...\n");
@@ -3207,22 +3399,30 @@ int InitImgObjectforROS::checkDirectionWithFlann(cv::Mat &src, int min_hessian)
         }
         else{
                 int left_turn_score = 0, right_turn_score = 0;
-                for (size_t i = 0; i < knn_matches_left.size(); i++)
-                {
-                        if (knn_matches_left[i][0].distance < ratio_thresh * knn_matches_left[i][1].distance)
+                if(left_possible){
+                        for (size_t i = 0; i < knn_matches_left.size(); i++)
                         {
-                                left_turn_score++;       
+                                if (knn_matches_left[i][0].distance < ratio_thresh * knn_matches_left[i][1].distance)
+                                {
+                                        left_turn_score++;       
+                                }
                         }
                 }
-                for (size_t i = 0; i < knn_matches_right.size(); i++)
-                {
-                        if (knn_matches_right[i][0].distance < ratio_thresh * knn_matches_right[i][1].distance)
+                else{left_turn_score = -9999;}
+
+                if(right_possible){
+                        for (size_t i = 0; i < knn_matches_right.size(); i++)
                         {
-                                right_turn_score++;
+                                if (knn_matches_right[i][0].distance < ratio_thresh * knn_matches_right[i][1].distance)
+                                {
+                                        right_turn_score++;
+                                }
                         }
                 }
+                else{right_turn_score = -9999;}
+
                 if(left_turn_score > right_turn_score){
-                        if(left_turn_score > 4){
+                        if(left_turn_score > 3){
                                 return_val = -1;
                         }
                         else{
@@ -3230,7 +3430,7 @@ int InitImgObjectforROS::checkDirectionWithFlann(cv::Mat &src, int min_hessian)
                         }
                 }
                 else if(left_turn_score < right_turn_score){
-                        if(right_turn_score>4){
+                        if(right_turn_score > 3){
                                 return_val = 1;
                         }
                         else{
@@ -3245,24 +3445,23 @@ int InitImgObjectforROS::checkDirectionWithFlann(cv::Mat &src, int min_hessian)
         return return_val;
 
         // ///**https://docs.opencv.org/3.4/d5/d6f/tutorial_feature_flann_matcher.html**//
-        // cv::Mat left_turn_src = cv::imread("/home/seuleee/Pictures/left_turn_t1.jpg",cv::IMREAD_GRAYSCALE);
-        // cv::Mat right_turn_src = cv::imread("/home/seuleee/Pictures/right_turn_t2.jpg",cv::IMREAD_GRAYSCALE);
+        // cv::Mat trainnig_src = cv::imread("/home/seuleee/Pictures/trainnig_src.jpg",cv::IMREAD_GRAYSCALE);
+        // cv::Mat cur_src = frame.clone();
         // int min_hessian = 400;
 
         // cv::Ptr<cv::xfeatures2d::SURF> detector = cv::xfeatures2d::SURF::create(min_hessian);
         // std::vector<cv::KeyPoint> keypoints1, keypoints2;
         // cv::Mat descriptors1, descriptors2;
-        // cv::Mat left_turn_origin = frame.clone();
-        // cv::cvtColor(left_turn_origin,left_turn_origin,CV_BGR2GRAY);
-        // detector->detectAndCompute(left_turn_src, cv::noArray(),keypoints1,descriptors1);
-        // detector->detectAndCompute(left_turn_origin, cv::noArray(),keypoints2,descriptors2);
+        // cv::cvtColor(cur_src,cur_src,CV_BGR2GRAY);
+        // detector->detectAndCompute(trainnig_src, cv::noArray(),keypoints1,descriptors1);
+        // detector->detectAndCompute(cur_src, cv::noArray(),keypoints2,descriptors2);
 
         // cv::Ptr<cv::DescriptorMatcher> matcher = cv::DescriptorMatcher::create(cv::DescriptorMatcher::FLANNBASED);
         // std::vector<std::vector<cv::DMatch>> knn_matches;
-        //if(descriptors2.size > descriptors1.size)
-        // matcher->knnMatch(descriptors1,descriptors2,knn_matches,2);
-        //else
-        // matcher->knnMatch(descriptors2,descriptors1,knn_matches,2);
+        //if(keypoints1.size() >= 2 && keypoints2.size() >=2){
+        //      matcher->knnMatch(descriptors1,descriptors2,knn_matches,2);
+        //}
+        //else return false;
         // const float ratio_thresh = 0.7f;
         // std::vector<cv::DMatch> good_matches;
         // for(size_t i = 0; i< knn_matches.size(); i++){
@@ -3271,13 +3470,8 @@ int InitImgObjectforROS::checkDirectionWithFlann(cv::Mat &src, int min_hessian)
         //         }
         // }
         // cv::Mat img_matches;
-        //if(left_turn_src.size > left_turn_origin)
-        // cv::drawMatches(left_turn_origin,keypoints2,left_turn_src,keypoints1,good_matches,img_matches,
+        // cv::drawMatches(trainnig_src,keypoints2,cur_src,keypoints1,good_matches,img_matches,
         //                 cv::Scalar::all(-1),cv::Scalar::all(-1),std::vector<char>(),cv::DrawMatchesFlags::NOT_DRAW_SINGLE_POINTS);
-        //else
-        // cv::drawMatches(left_turn_src,keypoints1,left_turn_origin,keypoints2,good_matches,img_matches,
-        //                 cv::Scalar::all(-1),cv::Scalar::all(-1),std::vector<char>(),cv::DrawMatchesFlags::NOT_DRAW_SINGLE_POINTS);
-        // std::cout<<"good matches size : "<<good_matches.size()<<std::endl;
         // cv::imshow("surf keypoints", img_matches);
         // ///**https://docs.opencv.org/3.4/d5/d6f/tutorial_feature_flann_matcher.html**//
 }
@@ -3287,23 +3481,35 @@ bool InitImgObjectforROS::checkParkingWithFlann(cv::Mat &src, int min_hessian){
         ///**https://docs.opencv.org/3.4/d5/d6f/tutorial_feature_flann_matcher.html**//
         cv::Mat parking_src = cv::imread("/home/seuleee/Pictures/parking.jpg", cv::IMREAD_GRAYSCALE);
         cv::Mat input_src = src.clone();
+        cv::Mat blur_input_src;
+        cv::GaussianBlur(input_src, blur_input_src, cv::Size(0,0), 1 );
+        cv::addWeighted(input_src, 2.5, blur_input_src, -1.5, 1, input_src);//for sharpning
         cv::cvtColor(input_src, input_src, CV_BGR2GRAY);
-        cv::Mat descriptors_input, descriptors_parking;
-
-        cv::Ptr<cv::xfeatures2d::SURF> detector = cv::xfeatures2d::SURF::create(min_hessian);
-        std::vector<cv::KeyPoint> keypoints_input, keypoints_parking;
+        cv::Mat descriptors_parking, descriptors_input;
         
-        detector->detectAndCompute(input_src, cv::noArray(), keypoints_input, descriptors_input);               
+        cv::Ptr<cv::xfeatures2d::SURF> detector = cv::xfeatures2d::SURF::create(min_hessian);
+        std::vector<cv::KeyPoint> keypoints_parking, keypoints_input;
+
         detector->detectAndCompute(parking_src, cv::noArray(), keypoints_parking, descriptors_parking);
+        detector->detectAndCompute(input_src, cv::noArray(), keypoints_input, descriptors_input);               
+        
        
 
         cv::Ptr<cv::DescriptorMatcher> matcher = cv::DescriptorMatcher::create(cv::DescriptorMatcher::FLANNBASED);
         std::vector<std::vector<cv::DMatch>> knn_matches;
-        if(descriptors_input.size > descriptors_parking.size){
+        if (keypoints_parking.size() >= 2 && keypoints_input.size() >= 2)
+        {
+                // if(descriptors_input.size > descriptors_parking.size){
+                //         matcher->knnMatch(descriptors_parking, descriptors_input, knn_matches, 2);
+                // }
+                // else{//descriptors_input.size <= descriptors_parking.size
+                //         matcher->knnMatch(descriptors_input, descriptors_parking, knn_matches, 2);
+                // }
                 matcher->knnMatch(descriptors_parking, descriptors_input, knn_matches, 2);
         }
         else{
-                matcher->knnMatch(descriptors_input, descriptors_parking, knn_matches, 2);
+                return_val = false;
+                return return_val;
         }
 
         const float ratio_thresh = 0.7f;
@@ -3319,14 +3525,17 @@ bool InitImgObjectforROS::checkParkingWithFlann(cv::Mat &src, int min_hessian){
                 
                 cv::Mat img_matches;
                 if(good_matches.size() > 4){
-                        if(input_src.size > parking_src.size){
-                                cv::drawMatches(parking_src, keypoints_parking, input_src, keypoints_input, good_matches, img_matches,
+                        // if(input_src.size > parking_src.size){
+                        //         cv::drawMatches(parking_src, keypoints_parking, input_src, keypoints_input, good_matches, img_matches,
+                        //                         cv::Scalar::all(-1), cv::Scalar::all(-1), std::vector<char>(), cv::DrawMatchesFlags::NOT_DRAW_SINGLE_POINTS);
+                        // }
+                        // else{//input_src.size < parking_src.size
+                        //         cv::drawMatches(input_src, keypoints_input, parking_src, keypoints_parking,  good_matches, img_matches,
+                        //                         cv::Scalar::all(-1), cv::Scalar::all(-1), std::vector<char>(), cv::DrawMatchesFlags::NOT_DRAW_SINGLE_POINTS);
+                        // }
+                        cv::drawMatches(parking_src, keypoints_parking, input_src, keypoints_input, good_matches, img_matches,
                                                 cv::Scalar::all(-1), cv::Scalar::all(-1), std::vector<char>(), cv::DrawMatchesFlags::NOT_DRAW_SINGLE_POINTS);
-                        }
-                        else{
-                                cv::drawMatches(input_src, keypoints_input, parking_src, keypoints_parking,  good_matches, img_matches,
-                                                cv::Scalar::all(-1), cv::Scalar::all(-1), std::vector<char>(), cv::DrawMatchesFlags::NOT_DRAW_SINGLE_POINTS);
-                        }
+                        
                         return_val = true;
                         printf("*******************************************************parking area !!!!\n");   
                         printf("good match parking size : %d\n",good_matches.size());
@@ -3363,24 +3572,47 @@ bool InitImgObjectforROS::checkTunnelWithFlann(cv::Mat &src, int min_hessian){
         bool return_val = false;
 
         ///**https://docs.opencv.org/3.4/d5/d6f/tutorial_feature_flann_matcher.html**//
-        cv::Mat parking_src = cv::imread("/home/seuleee/Pictures/tunnel.jpg", cv::IMREAD_GRAYSCALE);
+        cv::Mat tunnel_src = cv::imread("/home/seuleee/Pictures/tunnel.jpg", cv::IMREAD_GRAYSCALE);
+        
+
         cv::Mat input_src = src.clone();
-        cv::cvtColor(input_src, input_src, CV_BGR2GRAY);
-        cv::Mat descriptors_input, descriptors_tunnel;
+        cv::Mat blur_input_src;
+        cv::GaussianBlur(input_src, blur_input_src, cv::Size(0,0), 1 );
+        cv::addWeighted(input_src, 2.5, blur_input_src, -1.5, 1, input_src);//for sharpning
+      
+
+        cv::imshow("sharp src",input_src);
+        cv::Mat descriptors_tunnel, descriptors_input;
 
         cv::Ptr<cv::xfeatures2d::SURF> detector = cv::xfeatures2d::SURF::create(min_hessian);
-        std::vector<cv::KeyPoint> keypoints_input, keypoints_tunnel;
+        std::vector<cv::KeyPoint> keypoints_tunnel, keypoints_input;
         
+        detector->detectAndCompute(tunnel_src, cv::noArray(), keypoints_tunnel, descriptors_tunnel);
         detector->detectAndCompute(input_src, cv::noArray(), keypoints_input, descriptors_input);               
-        detector->detectAndCompute(parking_src, cv::noArray(), keypoints_tunnel, descriptors_tunnel);
-       
-
+        
+     
         cv::Ptr<cv::DescriptorMatcher> matcher = cv::DescriptorMatcher::create(cv::DescriptorMatcher::FLANNBASED);
         std::vector<std::vector<cv::DMatch>> knn_matches;
-        matcher->knnMatch(descriptors_tunnel, descriptors_input, knn_matches, 2);
 
+        if (keypoints_input.size() >= 2 && keypoints_tunnel.size() >= 2)
+        {
+                // if (descriptors_input.size > descriptors_tunnel.size)
+                // {
+                //         matcher->knnMatch(descriptors_tunnel, descriptors_input, knn_matches, 2);
+                // }
+                // else
+                // { //descriptors_input.size <= descriptors_tunnel.size
+                //         matcher->knnMatch(descriptors_input, descriptors_tunnel, knn_matches, 2);
+                // }
+                matcher->knnMatch(descriptors_tunnel, descriptors_input, knn_matches, 2);
+        }
+        else{
+                return_val = false;
+                return return_val;
+        }
         const float ratio_thresh = 0.7f;
-        if(for_gui){
+        if (for_gui)
+        {
                 std::vector<cv::DMatch> good_matches;
                 for (size_t i = 0; i < knn_matches.size(); i++)
                 {
@@ -3389,40 +3621,54 @@ bool InitImgObjectforROS::checkTunnelWithFlann(cv::Mat &src, int min_hessian){
                                 good_matches.push_back(knn_matches[i][0]);
                         }
                 }
-                
+
                 cv::Mat img_matches;
-                if(good_matches.size() > 4){
-                        cv::drawMatches(parking_src, keypoints_tunnel, input_src, keypoints_input, good_matches, img_matches,
-                        cv::Scalar::all(-1), cv::Scalar::all(-1), std::vector<char>(), cv::DrawMatchesFlags::NOT_DRAW_SINGLE_POINTS);
+                if (good_matches.size() > 3)
+                {
+
+                        // if(input_src.size > tunnel_src.size){
+                        //         cv::drawMatches(tunnel_src, keypoints_tunnel, input_src, keypoints_input, good_matches, img_matches,
+                        //                 cv::Scalar::all(-1), cv::Scalar::all(-1), std::vector<char>(), cv::DrawMatchesFlags::NOT_DRAW_SINGLE_POINTS);
+
+                        // }
+                        // else{//input_src.size <= tunnel_src.size
+                        //         cv::drawMatches(input_src, keypoints_input, tunnel_src, keypoints_tunnel, good_matches, img_matches,
+                        //                 cv::Scalar::all(-1), cv::Scalar::all(-1), std::vector<char>(), cv::DrawMatchesFlags::NOT_DRAW_SINGLE_POINTS);
+
+                        // }
+                        cv::drawMatches(tunnel_src, keypoints_tunnel, input_src, keypoints_input, good_matches, img_matches,
+                                        cv::Scalar::all(-1), cv::Scalar::all(-1), std::vector<char>(), cv::DrawMatchesFlags::NOT_DRAW_SINGLE_POINTS);
                         return_val = true;
-                        printf("*******************************************************tunnel enter !!!!\n");   
-                        printf("good match tunnel size : %d\n",good_matches.size());
+                        printf("********************************************************tunnel enter !!!!\n");
+                        printf("good match tunnel size : %d\n", good_matches.size());
                         cv::imshow("surf keypoints", img_matches);
                 }
-                else{
+                else
+                {
                         return_val = false;
-                        
-                }       
+                }
         }
-        else{
-                int parking_score = 0;
+        else
+        {
+                int tunnel_score = 0;
                 for (size_t i = 0; i < knn_matches.size(); i++)
                 {
                         if (knn_matches[i][0].distance < ratio_thresh * knn_matches[i][1].distance)
                         {
-                                parking_score++;       
+                                tunnel_score++;
                         }
                 }
-           
-                if(parking_score > 4){
+
+                if (tunnel_score > 3)
+                {
                         return_val = true;
                 }
-                else {
+                else
+                {
                         return_val = false;
                 }
-                
         }
-        
+
         return return_val;
 }
 bool InitImgObjectforROS::checkBlueArea(cv::Mat &src, cv::Point &left_top_blue, cv::Point &right_bottom_blue){
@@ -3430,7 +3676,6 @@ bool InitImgObjectforROS::checkBlueArea(cv::Mat &src, cv::Point &left_top_blue, 
         std::vector<cv::Vec4i> hierachy;
 
         bool return_val = false;
-        
         cv::findContours(src, countours, hierachy, CV_RETR_LIST, CV_CHAIN_APPROX_SIMPLE, cv::Point(0, 0));
         cv::Mat dst = cv::Mat::zeros(src.size(), CV_8UC1);
 
@@ -3463,14 +3708,47 @@ bool InitImgObjectforROS::checkBlueArea(cv::Mat &src, cv::Point &left_top_blue, 
                 
                 if (width >= 20 && height >= 20 && abs(height-width) <10)
                 {
+                                
+                        // left_top_blue.x = left;
+                        // left_top_blue.y = top;
+                        // right_bottom_blue.x = left+width;
+                        // right_bottom_blue.y = top+height;
                         
-                        left_top_blue.x = left;
-                        left_top_blue.y = top;
-                        right_bottom_blue.x = left+width;
-                        right_bottom_blue.y = top+height;
+                        
+                        if(left - 10 > 0) {left_top_blue.x = left - 5;}
+                        else {left_top_blue.x = left;}
+
+                        if(top - 10 > 0) {left_top_blue.y = top - 5;}
+                        else{left_top_blue.y = top;}
+
+                        if(left+width + 10 < src.cols) {right_bottom_blue.x = left+width + 5;}
+                        else{right_bottom_blue.x = left+width;}
+
+                        if(top+height + 10 < src.rows) {right_bottom_blue.y = top+height + 5;}
+                        else{right_bottom_blue.y = top+height;}
+                        
+
+                        int is_rec1 = 0, is_rec2 = 0;
+                        for(int i = top-5; i<top+25; i++){
+                                int *blue_data = src.ptr<int>(i);
+                                for(int j = left-5; j<left+25; j++){
+                                        if(blue_data[j] != (uchar)0){
+                                                is_rec1++;
+                                        } 
+                                }
+                                // for(int j = left+10; j<left+20; j++){
+                                //         if(blue_data[j] != (uchar)0){
+                                //                 is_rec2++;
+                                //         } 
+                                // }
+                        }
+                        std::cout<< "rec1 : " <<is_rec1<<std::endl;
+                       
+
                         return_val = true;
                         return return_val;
                 }
+                
                 
                 if(for_gui){
                         cv::rectangle(draw_lable, cv::Point(left, top), cv::Point(left + width, top + height), cv::Scalar(0, 0, 255), 1);
@@ -3486,6 +3764,93 @@ bool InitImgObjectforROS::checkBlueArea(cv::Mat &src, cv::Point &left_top_blue, 
         return return_val;
          
 }
+
+bool InitImgObjectforROS::checkYellowArea(cv::Mat &src_red, cv::Mat &src_yellow, cv::Point &left_top_yellow, cv::Point &right_bottom_yellow){
+        std::vector<std::vector<cv::Point>> countours;
+        std::vector<cv::Vec4i> hierachy;
+
+        bool return_val = false;
+        
+        cv::findContours(src_yellow, countours, hierachy, CV_RETR_LIST, CV_CHAIN_APPROX_SIMPLE, cv::Point(0, 0));
+        cv::Mat dst = cv::Mat::zeros(src_yellow.size(), CV_8UC1);
+
+        for (std::vector<std::vector<cv::Point>>::size_type i = 0; i < countours.size(); ++i)
+        {
+                cv::drawContours(dst, countours, i, CV_RGB(255, 255, 255), -1, 8, hierachy, 0, cv::Point());
+        }
+        cv::threshold(dst, dst, 120, 255, cv::THRESH_BINARY);
+        
+        cv::Mat draw_lable;
+        cv::threshold(dst, draw_lable, 120, 255, cv::THRESH_BINARY_INV);
+
+        cv::Mat img_labels, stats, centroids;
+        int numOfLables = cv::connectedComponentsWithStats(dst, img_labels, stats, centroids, 8, CV_32S);
+
+        
+        for (int row = 1; row < numOfLables; row++)
+        {
+
+                int *data = stats.ptr<int>(row);
+                int area = data[cv::CC_STAT_AREA];
+                int left = data[cv::CC_STAT_LEFT];
+                int top = data[cv::CC_STAT_TOP];
+                int width = data[cv::CC_STAT_WIDTH];
+                int height = data[cv::CC_STAT_HEIGHT];
+                // cv::rectangle(draw_lable, cv::Point(left, top), cv::Point(left + width, top + height), cv::Scalar(0, 0, 255), 1);
+                // cv::putText(draw_lable, std::to_string(area), cv::Point(left + 20, top + 20),
+                //             FONT_HERSHEY_SIMPLEX, 0.3, Scalar(5, 25, 255), 2);
+                // cv::imshow("w_lable", draw_lable);
+                
+                if (width >= 10 && height >= 10 && abs(height-width) <10 && width <= 40 && height <= 40)
+                {
+                        int y_score = 0;
+                        if(top - 5 > 0){
+                                for(int i = top; i>top-5; i--){
+                                        int *yellow_data = src_yellow.ptr<int>(i);
+                                        for(int j = left; j<left+width; j++){
+                                                if(yellow_data[j] != (char)0){
+                                                        y_score++;
+                                                }
+                                        }
+                                }
+                                
+                        }
+                        //if(y_score < 10){
+                                if(left - 10 > 0) {left_top_yellow.x = left-9;}
+                                else {left_top_yellow.x = left;}
+                                if(top - 10 > 0) {left_top_yellow.y = top-9;}
+                                else {left_top_yellow.y = top;}
+                                if(left+width + 10 < src_yellow.cols) {right_bottom_yellow.x = left+width + 9;}
+                                else {right_bottom_yellow.x = left+width;}
+                                if(top+height + 10 < src_yellow.rows) {right_bottom_yellow.y = top+height + 9;}
+                                else {right_bottom_yellow.y = top+height;}
+                                // left_top_blue.x = left;
+                                // left_top_blue.y = top;
+                                // right_bottom_blue.x = left+width;
+                                // right_bottom_blue.y = top+height;
+                                return_val = true;
+                                return return_val;
+                        //}
+                        // else{
+                        //         return_val = false;
+                        // }
+                        
+                }
+                
+                if(for_gui){
+                        cv::rectangle(draw_lable, cv::Point(left, top), cv::Point(left + width, top + height), cv::Scalar(0, 0, 255), 1);
+                        cv::putText(draw_lable, std::to_string(width), cv::Point(left + 20, top - 20),
+                                cv::FONT_HERSHEY_SIMPLEX, 0.3, cv::Scalar(5, 25, 255), 1);
+                        cv::putText(draw_lable, std::to_string(height), cv::Point(left, top - 20),
+                                cv::FONT_HERSHEY_SIMPLEX, 0.3, cv::Scalar(5, 25, 255), 1);
+                        cv::imshow("yellow_lable", draw_lable);
+                }
+                
+               
+        }
+        return return_val;
+}
+
 int main(int argc, char **argv)
 {
         ros::init(argc, argv, "lane_detection");

@@ -5,6 +5,7 @@
 #include "geometry_msgs/Twist.h"
 #include "geometry_msgs/PoseStamped.h"
 #include "std_msgs/Float64.h"
+#include <laser_geometry/laser_geometry.h>
 #include "std_msgs/MultiArrayDimension.h"
 #include "std_msgs/MultiArrayLayout.h"
 #include "std_msgs/Int32MultiArray.h"
@@ -13,10 +14,12 @@
 #include <pcl_conversions/pcl_conversions.h>
 #include <pcl/point_cloud.h>
 #include <pcl/point_types.h>
+#include <sensor_msgs/LaserScan.h>
 #define WHEEL_RADIUS 0.033
 #define WHEEL_BASE_LENGTH 0.160 //burger( waffle : 0.287)
 
 sensor_msgs::JointState js;
+std_msgs::Float32MultiArray scan_array;
 pcl::PointCloud<pcl::PointXYZI> pc;//i is intensity by lidar
 bool right = true;
 
@@ -190,6 +193,14 @@ void resetMsgCallback(const std_msgs::Bool resetMsg){
            
     }
 }
+
+void ScanCallback(const sensor_msgs::LaserScan::ConstPtr& input){
+   
+//    for(int i = 0; i<input->ranges.size(); i++){
+//        scan_array.data.push_back(input->ranges[i]);
+//    }
+    
+}
 int main(int argc, char **argv){
     ros::init(argc, argv, "motor_control");
     ros::NodeHandle nh;
@@ -197,10 +208,14 @@ int main(int argc, char **argv){
     initParam(nh);
     ros::Publisher twist_pub = nh.advertise<geometry_msgs::Twist>("/cmd_vel",1000); 
 	ros::Publisher cloud_pub = nh.advertise<sensor_msgs::PointCloud2>("/cloud_out",1000);
+ 
+    
 	ros::Subscriber state_reader = nh.subscribe("/joint_states",1000,jointCallback); 
 	ros::Subscriber point_reader = nh.subscribe("/cloud_points",1000,cloudCallback);
     ros::Subscriber ang_vel_reader = nh.subscribe("/main/angular_vel",100,pidCallback);
     ros::Subscriber reset_msg_reader = nh.subscribe("/main/reset_msg",100,resetMsgCallback);
+ 
+   
     //ros::Publisher t_pub = nh.advertise<geometry_msgs::PoseStamped>("/move_base_simple/goal",5); 
 	//ros::ServiceServer control_srv = nh.advertiseService("/msrv",exec_command);
 	
@@ -231,7 +246,6 @@ int main(int argc, char **argv){
         }
 
         twist_pub.publish(twist_cmd);
-        
         loop_rate.sleep();
         
         // goal_test.header.stamp = ros::Time::now();

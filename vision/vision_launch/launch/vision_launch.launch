@@ -10,7 +10,7 @@
 			<param name="imshow" value="0"/>
 			<param name="track_bar" value="1"/>
 
-			<param name="gazebo" value="0"/>
+			<param name="gazebo" value="1"/>
 			<param name="bird_eye_view" value="0"/>
 			<param name="auto_shot" value="0"/>
 			<param name="auto_record" value="0"/>
