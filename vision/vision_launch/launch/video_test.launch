@@ -24,8 +24,70 @@
 			<param name="right_max_interval" value="132"/>
 			
 			<param name="record_name" value="/home/seuleee/Desktop/autorace_video_src/0720/stop/1/main_record.avi"/>
+			<param name="y_hmin" value="23"/>
+			<param name="y_hmax" value="75"/>
+			<!-- <param name="y_smin" value="39"/> -->
+			<param name="y_smin" value="37"/>
+			<!-- <param name="y_smax" value="153"/> -->
+			<param name="y_smax" value="255"/>
+			<!-- <param name="y_vmin" value="15"/> -->
+			<param name="y_vmin" value="91"/>
+			<param name="y_vmax" value="208"/>
+	
+			<param name="w_hmin" value="6"/>
+			<!-- <param name="w_hmin" value="38"/> -->
+			<param name="w_hmax" value="179"/>
+			<param name="w_smin" value="0"/>
+			<param name="w_smax" value="30"/>
+			<!-- <param name="w_smax" value="88"/> -->
+			<param name="w_vmin" value="81"/>
+			<!-- <param name="w_vmin" value="181"/> -->
+			<param name="w_vmax" value="255"/>
+
+			<param name="r_hmin" value="133"/>
+			<param name="r_hmax" value="179"/>
+			<param name="r_smin" value="15"/>
+			<param name="r_smax" value="255"/>
+			<param name="r_vmin" value="65"/>
+			<param name="r_vmax" value="255"/>
+
+
+
+			<param name="r2_hmin" value="110"/>
+			<param name="r2_hmax" value="179"/>
+			<param name="r2_smin" value="89"/>
+			<param name="r2_smax" value="255"/>
+			<param name="r2_vmin" value="86"/>
+			<param name="r2_vmax" value="255"/>
+
+			<param name="g_hmin" value="38"/>
+			<param name="g_hmax" value="87"/>
+			<param name="g_smin" value="77"/>
+			<param name="g_smax" value="255"/>
+			<param name="g_vmin" value="22"/>
+			<param name="g_vmax" value="255"/>
+
+			<param name="y2_hmin" value="0"/>
+			<param name="y2_hmax" value="24"/>
+			<param name="y2_smin" value="189"/>
+			<param name="y2_smax" value="255"/>
+			<param name="y2_vmin" value="69"/>
+			<param name="y2_vmax" value="255"/>
+			<!-- <param name="y2_hmin" value="0"/>
+			<param name="y2_hmax" value="51"/>
+			<param name="y2_smin" value="148"/>
+			<param name="y2_smax" value="255"/>
+			<param name="y2_vmin" value="102"/>
+			<param name="y2_vmax" value="248"/> -->
+
+			<param name="b_hmin" value="80"/>
+			<param name="b_hmax" value="115"/>
+			<param name="b_smin" value="199"/>
+			<param name="b_smax" value="255"/>
+			<param name="b_vmin" value="21"/>
+			<param name="b_vmax" value="198"/>
 			<!--robotis-->
-			<param name="y_hmin" value="10"/>
+			<!-- <param name="y_hmin" value="10"/>
 			<param name="y_hmax" value="40"/>
 			<param name="y_smin" value="33"/>
 			<param name="y_smax" value="132"/>
@@ -45,14 +107,6 @@
 			<param name="r_smax" value="255"/>
 			<param name="r_vmin" value="122"/>
 			<param name="r_vmax" value="255"/>
-			<!-- 학겨 -->
-			<!-- <param name="r_hmin" value="133"/>
-			<param name="r_hmax" value="179"/>
-			<param name="r_smin" value="31"/>
-			<param name="r_smax" value="255"/>
-			<param name="r_vmin" value="85"/>
-			<param name="r_vmax" value="255"/> -->
-
 
 			<param name="r2_hmin" value="113"/>
 			<param name="r2_hmax" value="179"/>
@@ -80,7 +134,7 @@
 			<param name="b_smin" value="152"/>
 			<param name="b_smax" value="255"/>
 			<param name="b_vmin" value="64"/>
-			<param name="b_vmax" value="255"/>
+			<param name="b_vmax" value="255"/> -->
     </node>
 
 		<!--

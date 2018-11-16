@@ -20,8 +20,10 @@
 #include <string>
 #include <math.h>
 
+int frame_rate = 0;
 /////////mission check///////
 bool left_direction_mode = false, right_direction_mode = false, two_direction_checked = false;
+int turn_cnt = 0;
 int two_direction_stage = 0;
 bool building_mode = false, building_checked = false;
 int building_stage = 0;
@@ -29,11 +31,12 @@ bool parking_mode = false, parking_checked = false;
 int parking_reliabilty = 0, go_cnt = 0;
 cv::Point first_point;
 int parking_stage = 0;
+int parking_cnt = 0;
 bool blocking_bar_mode = false, blocking_bar_checked = false;
 int blocking_bar_reliabilty = 0, blocking_bar_stage = 0, blocking_bar_first = 0;
 bool tunnel_mode = false, tunnel_checked = false;
 int tunnel_reliabilty = 0;
-bool signal_lamp_mode = false, signal_lamp_checked = true;
+bool signal_lamp_mode = false, signal_lamp_checked = false;
 int signal_lamp_stage = 0, red_rotation = 0, yellow_rotation = 0;
 int red_reliabilty = 0, green_reliabilty = 0, yellow_reliabilty = 0;
 bool normal_mode = true;
@@ -123,10 +126,10 @@ class InitImgObjectforROS
 
 
         std_msgs::Bool reset_val;
-        ros::Publisher pub = nh.advertise<std_msgs::Int32MultiArray>("/" + groupName + "/lane", 100); //Topic publishing at each camera
-        ros::Publisher goal_pub = nh.advertise<std_msgs::Float32MultiArray>("/" + groupName + "/pixel_goal", 100);
-        ros::Publisher ang_vel_pub = nh.advertise<std_msgs::Float32MultiArray>("/" + groupName + "/angular_vel", 100);
-        ros::Publisher reset_msg_pub = nh.advertise<std_msgs::Bool>("/" + groupName + "/reset_msg", 100);
+        ros::Publisher pub = nh.advertise<std_msgs::Int32MultiArray>("/" + groupName + "/lane", 10); //Topic publishing at each camera
+        ros::Publisher goal_pub = nh.advertise<std_msgs::Float32MultiArray>("/" + groupName + "/pixel_goal", 10);
+        ros::Publisher ang_vel_pub = nh.advertise<std_msgs::Float32MultiArray>("/" + groupName + "/angular_vel", 10);
+        ros::Publisher reset_msg_pub = nh.advertise<std_msgs::Bool>("/" + groupName + "/reset_msg", 10);
         
         ros::Subscriber scan_reader = nh.subscribe("/scan",1,&InitImgObjectforROS::ScanCb,this);
         
@@ -161,6 +164,7 @@ class InitImgObjectforROS
         bool checkTunnelWithFlann(cv::Mat &src, int min_hessian);
         bool checkBlueArea(cv::Mat &src, cv::Point &left_top_blue, cv::Point &right_bottom_blue);
         bool checkYellowArea(cv::Mat &src_red, cv::Mat &src_yellow, cv::Point &left_top_yellow, cv::Point &right_bottom_yellow);
+        bool checkBuildingWithFlann(cv::Mat &src, int min_hessian);
 
         bool detectBlockingBar(cv::Mat src);
         bool signalRedDetection(cv::Mat src_red);
@@ -183,7 +187,7 @@ InitImgObjectforROS::InitImgObjectforROS() : it(nh)
                         sub_img = it.subscribe("/" + groupName + "/raw_image", 1, &InitImgObjectforROS::imgCb, this);
                 }
                 else
-                { //use gazebo topic
+                { //use gazebo topicm 
                         sub_img = it.subscribe("/camera/image", 1, &InitImgObjectforROS::imgCb, this);
                 }
         }
@@ -244,6 +248,22 @@ void InitImgObjectforROS::imgCb(const sensor_msgs::ImageConstPtr &img_msg)
                 origin = cv_ptr->image;
                 if (!frame.empty())
                 {
+                        cv::Mat frame2 = frame.clone();
+                        frame = frame + cv::Scalar(-50,-50,-50);
+                        frame.convertTo(frame,-1.5,0.9,0);
+
+                        //cv::imshow("f1",frame);
+                        //cv::imshow("f2",frame2);
+                        // for(int y = 0; y<frame.rows; y++){
+                        //         int *frame_data = frame.ptr<int>(y);
+                        //         for(int x = 0; x<frame.cols; x++){
+                        //                 if( frame_data[x*frame.channels()] - 20 > 0){
+                        //                         frame_data[x*frame.channels()] = frame_data[x*frame.channels()] - 20;
+                        //                 }
+                                        
+                        //         }
+                                
+                        // }
                         if (!gazebo)
                         {                                                                                                   //if you use gazebo topic than this condition not used.
                                 cv::resize(origin, frame, cv::Size(origin.cols / 2, origin.rows / 2), 0, 0, CV_INTER_AREA); //img downsizing //320 240
@@ -287,10 +307,11 @@ void InitImgObjectforROS::imgCb(const sensor_msgs::ImageConstPtr &img_msg)
                         origin_white_hsv = white_hsv.clone();
                         origin_yellow_hsv = yellow_hsv.clone();
 
-                      
+                        
                         if(!two_direction_checked || !parking_checked){
                                 cv::Point left_top_blue, right_bottom_blue;
                                 bool is_blue = false;
+
                                 is_blue = checkBlueArea(blue_hsv,left_top_blue,right_bottom_blue);
                                 if(is_blue){ 
                                         
@@ -301,7 +322,10 @@ void InitImgObjectforROS::imgCb(const sensor_msgs::ImageConstPtr &img_msg)
                                         }
                                         cv::Rect2d blue_rect = cv::Rect(left_top_blue,right_bottom_blue);
                                         cv::Mat blue_src = frame(blue_rect);
-
+                                        
+                                        blue_src = blue_src + cv::Scalar(50,50,50);
+                                        
+                                        //cv::imshow("bliiii",blue_src);
                                         cv::Point new_left_top_blue, new_right_bottom_blue;
                                         new_left_top_blue.x = left_top_blue.x;
                                         new_left_top_blue.y = right_bottom_blue.y - 1;
@@ -320,171 +344,256 @@ void InitImgObjectforROS::imgCb(const sensor_msgs::ImageConstPtr &img_msg)
                                         }
 
                                         int white_score = 0, yellow_score = 0;
-                                        for (int y = new_left_top_blue.y; y < new_right_bottom_blue.y; y++)
+                                        int half_new_top_y = abs(new_left_top_blue.y - new_right_bottom_blue.y)/2;
+                                        
+                                        int white_flag = 0, yellow_flag = 0;
+                                        for (int y = new_right_bottom_blue.y; y > new_left_top_blue.y+ half_new_top_y; y--)
                                         {
-                                                int *check_left_white = white_hsv.ptr<int>(y);
-                                                int *check_right_yellow = yellow_hsv.ptr<int>(y);
+                                                uchar *check_left_white = white_hsv.ptr<uchar>(y);
+                                                uchar *check_right_yellow = yellow_hsv.ptr<uchar>(y);
+                                                
+                                                int col_cnt = 0;
                                                 for (int x = new_left_top_blue.x; x < new_right_bottom_blue.x; x++)
                                                 {
                                                         if (check_left_white[x] != (uchar)0)
                                                         {
                                                                 white_score++;
+                                                                white_flag = 1;
+                                                                
                                                         }
                                                         if (check_right_yellow[x] != (uchar)0)
                                                         {
+                                                                
                                                                 yellow_score++;
+                                                                yellow_flag = 1;
+                                                        }
+
+                                                        if(white_flag != 0 || yellow_flag != 0){
+                                                                col_cnt++;
+                                                        }
+                                                }
+                                                if(white_flag != 0 || yellow_flag != 0){
+                                                        if(col_cnt == 0){
+                                                                break;
                                                         }
                                                 }
                                         }
-                                         printf("white score : %d\n",white_score);
+                                        printf("white score : %d\n",white_score);
                                         printf("yellow score : %d\n",yellow_score);
                                         //각 단계 진행 이후 유사도 비교 x
                                         if(!two_direction_checked  && !signal_lamp_mode && !left_direction_mode && !right_direction_mode && !blocking_bar_mode && !parking_mode && !tunnel_mode){
                                         //if(!two_direction_checked && signal_lamp_checked){
                                                 int my_direction = 0;
-                                                my_direction = checkDirectionWithFlann(blue_src,400);
-                                                
-
-                                                if(my_direction < 0){
-                                                        // cv::Point new_left_top_blue, new_right_bottom_blue;
-                                                        // new_left_top_blue.x = left_top_blue.x - 1;
-                                                        // new_left_top_blue.y = right_bottom_blue.y-1;
-                                                        // new_right_bottom_blue.x = right_bottom_blue.x - 20;
-                                                        // if(right_bottom_blue.y + 100 < gui_test.rows){
-                                                        //         new_right_bottom_blue.y = right_bottom_blue.y + 100;
-                                                        // }
-                                                        // else{
-                                                        //         new_right_bottom_blue.y = right_bottom_blue.y;
-                                                        // }
-                                                        // if(for_gui){cv::rectangle(gui_test, new_left_top_blue, new_right_bottom_blue, cv::Scalar(0, 0, 255), 1);}
-                                                        
-                                                        // int white_score = 0;
-                                                        // for(int y = new_left_top_blue.y; y < new_right_bottom_blue.y; y++){
-                                                        //         int *check_left_white = white_hsv.ptr<int>(y);
-                                                        //         for(int x = new_left_top_blue.x; x<new_right_bottom_blue.x; x++){
-                                                        //                 if(check_left_white[x] != (uchar)0){
-                                                        //                         white_score++;
-                                                        //                 }
-                                                        //         }
-                                                        // }
-                                                        if(white_score >= yellow_score){
-                                                                if(!debug){
-                                                                        printf("white score : %d\n",white_score);
-                                                                        printf("##############################################turn left#####\n\n");
+                                                my_direction = checkDirectionWithFlann(frame,400);
+                                                if(my_direction != 0){
+                                                        turn_cnt++;
+                                                }
+                                                //if(turn_cnt >= 3){
+                                                        turn_cnt = 0;
+                                                                if(my_direction < 0){
+                                                                // cv::Point new_left_top_blue, new_right_bottom_blue;
+                                                                // new_left_top_blue.x = left_top_blue.x - 1;
+                                                                // new_left_top_blue.y = right_bottom_blue.y-1;
+                                                                // new_right_bottom_blue.x = right_bottom_blue.x - 20;
+                                                                // if(right_bottom_blue.y + 100 < gui_test.rows){
+                                                                //         new_right_bottom_blue.y = right_bottom_blue.y + 100;
+                                                                // }
+                                                                // else{
+                                                                //         new_right_bottom_blue.y = right_bottom_blue.y;
+                                                                // }
+                                                                // if(for_gui){cv::rectangle(gui_test, new_left_top_blue, new_right_bottom_blue, cv::Scalar(0, 0, 255), 1);}
+                                                                
+                                                                // int white_score = 0;
+                                                                // for(int y = new_left_top_blue.y; y < new_right_bottom_blue.y; y++){
+                                                                //         int *check_left_white = white_hsv.ptr<int>(y);
+                                                                //         for(int x = new_left_top_blue.x; x<new_right_bottom_blue.x; x++){
+                                                                //                 if(check_left_white[x] != (uchar)0){
+                                                                //                         white_score++;
+                                                                //                 }
+                                                                //         }
+                                                                // }
+                                                                
+                                                                if(white_score >= yellow_score && white_score > 0){
+                                                                        if(!debug){
+                                                                                printf("white score : %d\n",white_score);
+                                                                                
+                                                                                
+                                                                        }
+                                                                        //turn_cnt++;
+                                                                        //if(turn_cnt>=3){
+                                                                                printf("##############################################turn left#####\n\n");
+                                                                                left_direction_mode = true;
+                                                                                normal_mode = false;
+                                                                        //        turn_cnt = 0;
+                                                                        //}
                                                                         
                                                                 }
+                                                                else{
+                                                                        //if(!debug){
+                                                                                
+                                                                        //}
+                                                                        //turn_cnt++;
+                                                                        //if(turn_cnt>=3){
+                                                                                if(yellow_score > 0){
+                                                                                        printf("##############################################turn right#####\n\n");
+                                                                                        right_direction_mode = true;
+                                                                                        normal_mode = false;
+                                                                                }
+                                                                                
+                                                                        //        turn_cnt = 0;
+                                                                        //}
                                                                 
-                                                                left_direction_mode = true;
-                                                        }
-                                                        else{
-                                                                if(!debug){
-                                                                        printf("##############################################turn right#####\n\n");
                                                                 }
                                                                 
-                                                                right_direction_mode = true;
-                                                        }
-                                                        
-                                                        normal_mode = false;
+                                                                
 
-                                                        //turn left
-                                                        //nomal 해제 -> yellow 추종 -> nomal 복구 -> direction checked
-                                                }
-                                                else if(my_direction > 0){
+                                                                //turn left
+                                                                //nomal 해제 -> yellow 추종 -> nomal 복구 -> direction checked
+                                                        }
+                                                        else if(my_direction > 0){
 
-                                                        // cv::Point new_left_top_blue, new_right_bottom_blue;
-                                                        // new_left_top_blue.x = left_top_blue.x + 20;
-                                                        // new_left_top_blue.y = right_bottom_blue.y-1;
-                                                        // new_right_bottom_blue.x = right_bottom_blue.x + 1;
-                                                        // if(right_bottom_blue.y + 100 < gui_test.rows){
-                                                        //         new_right_bottom_blue.y = right_bottom_blue.y + 100;
-                                                        // }
-                                                        // else{
-                                                        //         new_right_bottom_blue.y = right_bottom_blue.y;
-                                                        // }
-                                                        // if(for_gui){cv::rectangle(gui_test, new_left_top_blue, new_right_bottom_blue, cv::Scalar(0, 0, 255), 1);}
-                                                        // int yellow_score = 0;
-                                                        // for(int y = new_left_top_blue.y; y < new_right_bottom_blue.y; y++){
-                                                        //         int *check_right_yellow = yellow_hsv.ptr<int>(y);
-                                                        //         for(int x = new_left_top_blue.x; x<new_right_bottom_blue.x; x++){
-                                                        //                 if(check_right_yellow[x] != (uchar)0){
-                                                        //                         yellow_score++;
-                                                        //                 }
-                                                        //         }
-                                                        // }
-                                                        
-                                                        if(yellow_score >= white_score){
-                                                                if(!debug){
-                                                                        printf("yellow score : %d\n",yellow_score);
-                                                                        printf("##############################################turn right#####\n\n");
+                                                                // cv::Point new_left_top_blue, new_right_bottom_blue;
+                                                                // new_left_top_blue.x = left_top_blue.x + 20;
+                                                                // new_left_top_blue.y = right_bottom_blue.y-1;
+                                                                // new_right_bottom_blue.x = right_bottom_blue.x + 1;
+                                                                // if(right_bottom_blue.y + 100 < gui_test.rows){
+                                                                //         new_right_bottom_blue.y = right_bottom_blue.y + 100;
+                                                                // }
+                                                                // else{
+                                                                //         new_right_bottom_blue.y = right_bottom_blue.y;
+                                                                // }
+                                                                // if(for_gui){cv::rectangle(gui_test, new_left_top_blue, new_right_bottom_blue, cv::Scalar(0, 0, 255), 1);}
+                                                                // int yellow_score = 0;
+                                                                // for(int y = new_left_top_blue.y; y < new_right_bottom_blue.y; y++){
+                                                                //         int *check_right_yellow = yellow_hsv.ptr<int>(y);
+                                                                //         for(int x = new_left_top_blue.x; x<new_right_bottom_blue.x; x++){
+                                                                //                 if(check_right_yellow[x] != (uchar)0){
+                                                                //                         yellow_score++;
+                                                                //                 }
+                                                                //         }
+                                                                // }
+                                                                
+                                                                if(yellow_score >= white_score && yellow_score > 0){
+                                                                        if(!debug){
+                                                                                printf("yellow score : %d\n",yellow_score);
+                                                                                
+                                                                        }
+                                                                        //turn_cnt++;
+                                                                        //if(turn_cnt>=3){
+                                                                                printf("##############################################turn right#####\n\n");
+                                                                                right_direction_mode = true;
+                                                                                normal_mode = false;
+                                                                        //        turn_cnt = 0;
+                                                                        //}
+                                                                
                                                                 }
-                                                               
-                                                                right_direction_mode = true;
-                                                        }
-                                                        else{
-                                                                if(!debug){
-                                                                        printf("##############################################turn left#####\n\n");
+                                                                else{
+                                                                        if(white_score > 0){
+                                                                                printf("##############################################turn left#####\n\n");
+                                                                                left_direction_mode = true;
+                                                                                normal_mode = false;
+                                                                        }
+
                                                                 }
-                                                                left_direction_mode = true;
+                                                                
+                                                                
+                                                                //turn right
+                                                                //nomal 해제 -> white 추종 -> nomal 복구 -> direction checked
                                                         }
-                                                        
-                                                        normal_mode = false;
-                                                        //turn right
-                                                        //nomal 해제 -> white 추종 -> nomal 복구 -> direction checked
-                                                }
+                                               // }
+                                                
                                         }
                                         //************************two direction checked 지울지말지 결정스..*******************
+                                        //if(!parking_checked  && !signal_lamp_mode && !left_direction_mode && !right_direction_mode && !blocking_bar_mode && !parking_mode && !tunnel_mode){
+                                        
                                         if(!parking_checked && two_direction_checked && !signal_lamp_mode && !left_direction_mode && !right_direction_mode && !blocking_bar_mode && !parking_mode && !tunnel_mode){
-                                                if(yellow_score < white_score){
-                                                        printf("##############################################parking detection#####\n\n");
-                                                        parking_mode = checkParkingWithFlann(blue_src,400);
-                                                        if(parking_mode) {normal_mode = false;}
+                                                //if( left_top_blue.x >160){
+                                                if(yellow_score < white_score && left_top_blue.x >160){
+                                                        
+                                                        
+                                                                bool is_park = false;
+                                                                parking_mode = checkParkingWithFlann(frame,400);
+                                                                if(parking_mode) {
+                                                                        //printf("##parking detection.....##\n\n");
+                                                                        parking_cnt++;
+                                                                        //if(parking_cnt >= 2){
+                                                                                printf("##########parking checked#######\n\n");
+                                                                                normal_mode = false;
+                                                                                parking_mode = true;
+                                                                       // }
+                                                                        
+                                                                }
+                                                        
+                                                        
+                                                }
+                                                else{
+                                                        printf("not park sign\n\n");
                                                 }
                                                 
                                         }
                                         
                                 }
                         }
-                        
-                        if(!tunnel_checked && !signal_lamp_mode && (left_direction_mode||right_direction_mode) && !blocking_bar_mode && !parking_mode && !tunnel_mode){
-                                
-                                cv::Point left_top_yellow, right_bottom_yellow;
-                                bool is_yellow = false;
-                                is_yellow = checkYellowArea(red_hsv, yellow2_hsv,left_top_yellow,right_bottom_yellow);
-                                if(is_yellow){
-                                        if(for_gui){
-                                                cv::rectangle(gui_test, left_top_yellow, right_bottom_yellow, cv::Scalar(100, 200, 255), 2);
-                                        }
-                                        cv::Rect2d yellow_rect = cv::Rect(left_top_yellow,right_bottom_yellow);
-                                        cv::Mat yellow_src = frame(yellow_rect);
-                                        tunnel_mode = checkTunnelWithFlann(yellow_src,400);
+                        // if(!building_checked && !signal_lamp_mode && (left_direction_mode||right_direction_mode) && !blocking_bar_mode && !parking_mode ){
+                        // //if(1){        
+                        //         cv::Point left_top_yellow, right_bottom_yellow;
+                        //         bool is_yellow = false;
+                        //         std::cout<<"sjksj"<<std::endl;
+                        //         is_yellow = checkYellowArea(red_hsv, yellow2_hsv,left_top_yellow,right_bottom_yellow);
+                            
+                        //         if(is_yellow){
+                        //                 if(for_gui){
+                        //                         cv::rectangle(gui_test, left_top_yellow, right_bottom_yellow, cv::Scalar(100, 200, 255), 2);
+                        //                 }
+                        //                 //cv::Rect2d yellow_rect = cv::Rect(left_top_yellow,right_bottom_yellow);
+                        //                 //cv::Mat yellow_src = frame(frame);
+                        //                 building_mode = checkBuildingWithFlann(frame,400);
                                         
-                                        if(tunnel_mode) {normal_mode = false;}
-                                }
-                        }
+                        //                 if(building_mode) {normal_mode = false;}
+                        //         }
+                        // }
+
+                        // if(!tunnel_checked && !signal_lamp_mode && (left_direction_mode||right_direction_mode) && !blocking_bar_mode && !parking_mode && !tunnel_mode){
+                                
+                        //         cv::Point left_top_yellow, right_bottom_yellow;
+                        //         bool is_yellow = false;
+                        //         is_yellow = checkYellowArea(red_hsv, yellow2_hsv,left_top_yellow,right_bottom_yellow);
+                        //         if(is_yellow){
+                        //                 if(for_gui){
+                        //                         cv::rectangle(gui_test, left_top_yellow, right_bottom_yellow, cv::Scalar(100, 200, 255), 2);
+                        //                 }
+                        //                 cv::Rect2d yellow_rect = cv::Rect(left_top_yellow,right_bottom_yellow);
+                        //                 cv::Mat yellow_src = frame(yellow_rect);
+                        //                 tunnel_mode = checkTunnelWithFlann(yellow_src,400);
+                                        
+                        //                 if(tunnel_mode) {normal_mode = false;}
+                        //         }
+                        // }
                         
 
                         cv::Mat park_detect = origin_white_hsv.clone();
-                        // cv::Sobel(park_detect, park_detect, park_detect.depth(), 0, 1);
-                        // cv::medianBlur(park_detect,park_detect,3);
+                                // cv::Sobel(park_detect, park_detect, park_detect.depth(), 0, 1);
+                                // cv::medianBlur(park_detect,park_detect,3);
                         std::vector<cv::Point> park_line_test;
-                        //cv::imshow("park_detect", park_detect);
+                                //cv::imshow("park_detect", park_detect);
 
                         //cv::imshow("blocking_bar", red_hsv);
-                        ///****canny & sobel***///
+                                ///****canny & sobel***///
                         cv::Mat my_canny = frame.clone();
-                        //setRoi("left",my_canny);
-                        setMyCanny("left_right", my_canny);
-                        //cv::imshow("left_right", my_canny);
-                        //cv::imshow("canny_left",yellow_canny);
-                        //callane.makeContoursLeftLane(yellow_canny, yellow_canny);
+                                //setRoi("left",my_canny);
+                        //setMyCanny("left_right", my_canny);
+                                //cv::imshow("left_right", my_canny);
+                                //cv::imshow("canny_left",yellow_canny);
+                                //callane.makeContoursLeftLane(yellow_canny, yellow_canny);
 
                         white_sobel = frame.clone();
-                        //setRoi("right",white_sobel);
-                        setMySobel(white_sobel);
-                        cv::imshow("sobel_right", white_sobel);
+                                //setRoi("right",white_sobel);
+                        //setMySobel(white_sobel);
+                                //cv::imshow("sobel_right", white_sobel);
 
                         yellow_labeling = yellow_hsv.clone();
-                        //yellow_labeling = yellow_hsv & my_canny;
+                        //cv::imshow("yellowwww",yellow_hsv);
+                                //yellow_labeling = yellow_hsv & my_canny;
                         setRoi("left", yellow_labeling, box_pt_y);
                         setMyMorphology(yellow_labeling);
                         //**If you use vector type variable, Please cheack your variable is not empty!
@@ -854,17 +963,17 @@ void InitImgObjectforROS::imgCb(const sensor_msgs::ImageConstPtr &img_msg)
 
                         if (normal_mode)
                         {
-                                x_goal_ = 0.14;
+                                x_goal_ = 0.08;
                                 y_goal_ = 0.0;
 
                                 std::cout << "************************************************************************" << std::endl;
 
                                 if (left_interval != -1 && right_interval != -1)
                                 {
-
+                                        if(!debug){
                                         std::cout << "case 1 : 'all intervals are not -1'\n   pre left roi slope : " << pre_left_roi_slope << ",   left slope : " << left_roi_slope
                                                   << ",\n   pre right roi slope : " << pre_right_roi_slope << ",   right slope : " << right_roi_slope << std::endl;
-
+                                        }
                                         if ((left_interval > left_min_interval && left_interval < left_max_interval))
                                         { //go straight condition
                                                 y_goal_ += 0.0;
@@ -874,22 +983,22 @@ void InitImgObjectforROS::imgCb(const sensor_msgs::ImageConstPtr &img_msg)
 
                                                 if (left_interval <= left_min_interval)
                                                 { //need right rotation(ang_vel<0 : right rotation)
-                                                        if (abs(left_interval - left_min_interval) < 15)
+                                                        if (abs(left_interval - left_min_interval) < 20)
                                                                 y_goal_ = -0.14;
-                                                        else if (abs(left_interval - left_min_interval) >= 15 && abs(left_interval - left_min_interval) < 30)
-                                                                y_goal_ = -0.21;
+                                                        else if (abs(left_interval - left_min_interval) >= 20 && abs(left_interval - left_min_interval) < 35)
+                                                                y_goal_ = -0.18;
                                                         else
-                                                                y_goal_ = -0.23;
+                                                                y_goal_ = -0.21;
                                                 }
                                                 else
                                                 { //need left rotation(ang_vel>0 : left rotation)
 
-                                                        if (abs(left_interval - left_max_interval) < 15)
+                                                        if (abs(left_interval - left_max_interval) < 20)
                                                                 y_goal_ = 0.14;
-                                                        else if (abs(left_interval - left_max_interval) >= 15 && abs(left_interval - left_max_interval) < 30)
-                                                                y_goal_ = 0.21;
+                                                        else if (abs(left_interval - left_max_interval) >= 20 && abs(left_interval - left_max_interval) < 35)
+                                                                y_goal_ = 0.18;
                                                         else
-                                                                y_goal_ = 0.23;
+                                                                y_goal_ = 0.21;
                                                 }
                                         }
                                         if (abs(left_interval - pre_left_interval) > 50 && left_interval != -1 && pre_left_interval != -1)
@@ -906,19 +1015,19 @@ void InitImgObjectforROS::imgCb(const sensor_msgs::ImageConstPtr &img_msg)
                                                 //** right lane tracking condition
                                                 if (right_interval <= right_min_interval)
                                                 { //need left rotation(ang_vel>0 : left rotation)
-                                                        if (abs(right_interval - right_min_interval) < 15)
+                                                        if (abs(right_interval - right_min_interval) < 20)
                                                                 y_goal_ += (float)0.14;
-                                                        else if (abs(right_interval - right_min_interval) >= 15 && abs(right_interval - right_min_interval) < 30)
-                                                                y_goal_ += (float)0.21;
+                                                        else if (abs(right_interval - right_min_interval) >= 20 && abs(right_interval - right_min_interval) < 35)
+                                                                y_goal_ += (float)0.18;
                                                         else
-                                                                y_goal_ += (float)0.23;
+                                                                y_goal_ += (float)0.21;
                                                 }
                                                 else
                                                 { //need right rotation(ang_vel<0 : right rotation)
 
-                                                        if (abs(right_interval - right_max_interval) < 15)
+                                                        if (abs(right_interval - right_max_interval) < 20)
                                                                 y_goal_ += (float)-0.14;
-                                                        else if (abs(right_interval - right_max_interval) >= 15 && abs(right_interval - right_max_interval) < 50)
+                                                        else if (abs(right_interval - right_max_interval) >= 20 && abs(right_interval - right_max_interval) < 35)
                                                                 y_goal_ += (float)-0.21;
                                                         else
                                                                 y_goal_ += (float)-0.23;
@@ -931,94 +1040,101 @@ void InitImgObjectforROS::imgCb(const sensor_msgs::ImageConstPtr &img_msg)
 
                                         ///***right doubling
                                         //if(0)
+                                        
                                         if ((abs(left_roi_slope) == 10 && abs(right_roi_slope) != 10) || left_roi_slope == 11)
+                                        
                                         {
+                                                x_goal_ = 0.07;
                                                 if (right_roi_slope != 11)
                                                 {
                                                         if (right_roi_slope <= 2)
                                                         {
-                                                                if (right_roi_slope >= 0.7)
+                                                                if (right_roi_slope >= 0.6)
                                                                 {
                                                                         y_goal_ = 0;
                                                                 }
-                                                                else if (right_roi_slope < 0.7 && right_roi_slope >= 0.6)
-                                                                {
-                                                                        y_goal_ = 0.16;
-                                                                }
                                                                 else if (right_roi_slope < 0.6 && right_roi_slope >= 0.5)
                                                                 {
-                                                                        y_goal_ = 0.19;
+                                                                        y_goal_ = 0.14;
                                                                 }
                                                                 else if (right_roi_slope < 0.5 && right_roi_slope >= 0.4)
                                                                 {
-                                                                        y_goal_ = 0.23;
+                                                                        y_goal_ = 0.18;
                                                                 }
-                                                                else if (right_roi_slope < 0.4 && right_roi_slope >= 0.3)
+                                                                else if (right_roi_slope < 0.3 && right_roi_slope >= 0.2)
                                                                 {
-                                                                        y_goal_ = 0.26;
+                                                                        y_goal_ = 0.21;
+                                                                }
+                                                                else if (right_roi_slope < 0.1 && right_roi_slope >= 0.05)
+                                                                {
+                                                                        y_goal_ = 0.23;
                                                                 }
                                                                 else
                                                                 {
-                                                                        y_goal_ = 0.29;
+                                                                        y_goal_ = 0.25;
                                                                 }
                                                         }
                                                 }
                                                 else
                                                 {
                                                         ///***left line presents doubling to left but right line has no info***///
-                                                        y_goal_ = -0.21;
+                                                        y_goal_ = -0.14;
                                                 }
                                         }
                                         //else if(0)
                                         else if ((abs(left_roi_slope) != 10 && abs(right_roi_slope) == 10) || right_roi_slope == 11)
                                         {
+                                                x_goal_ = 0.07;
                                                 if (left_roi_slope != 11)
                                                 {
                                                         if (abs(left_roi_slope) <= 2)
                                                         {
-                                                                if (abs(left_roi_slope) >= 0.7)
+                                                                if (abs(left_roi_slope) >= 0.6)
                                                                 {
                                                                         y_goal_ = 0;
                                                                 }
-                                                                else if (abs(left_roi_slope) < 0.7 && abs(left_roi_slope) >= 0.6)
-                                                                {
-                                                                        y_goal_ = -0.16;
-                                                                }
                                                                 else if (abs(left_roi_slope) < 0.6 && abs(left_roi_slope) >= 0.5)
                                                                 {
-                                                                        y_goal_ = -0.19;
+                                                                        y_goal_ = -0.14;
                                                                 }
                                                                 else if (abs(left_roi_slope) < 0.5 && abs(left_roi_slope) >= 0.4)
                                                                 {
-                                                                        y_goal_ = -0.23;
+                                                                        y_goal_ = -0.18;
                                                                 }
-                                                                else if (abs(left_roi_slope) < 0.4 && abs(left_roi_slope) >= 0.3)
+                                                                else if (abs(left_roi_slope) < 0.3 && abs(left_roi_slope) >= 0.2)
                                                                 {
-                                                                        y_goal_ = -0.26;
+                                                                        y_goal_ = -0.21;
+                                                                }
+                                                                else if (abs(left_roi_slope) < 0.1 && abs(left_roi_slope) >= 0.05)
+                                                                {
+                                                                        y_goal_ = -0.23;
                                                                 }
                                                                 else
                                                                 {
-                                                                        y_goal_ = -0.29;
+                                                                        y_goal_ = -0.25;
                                                                 }
                                                         }
                                                 }
                                                 else
                                                 {
                                                         ///***right line presents doubling to right but left line has no info***///
-                                                        y_goal_ = 0.21;
+                                                        y_goal_ = 0.14;
                                                 }
                                         }
                                         else if (abs(left_roi_slope) == 11 && abs(right_roi_slope) == 11)
                                         {
+                                                printf("&&&&&& no answer... &&&&&\n");
                                                 //  y_goal_ = prev_y_goal_;
                                         }
                                 }
                                 else if (left_interval != -1 && right_interval == -1)
                                 {
+                                        x_goal_ = 0.05;
                                         bool doubling_flag = false;
+                                        if(!debug){
                                         std::cout << "case 2 : 'only left interval is not -1'\n pre left roi slope : " << pre_left_roi_slope << ", left slope : " << left_roi_slope
                                                   << ",\n pre right roi slope : " << pre_right_roi_slope << ", right slope : " << right_roi_slope << std::endl;
-
+                                        }
                                         if ((left_interval > left_min_interval && left_interval < left_max_interval))
                                         {
                                                 if (abs(left_roi_slope) < 0.7)
@@ -1037,7 +1153,7 @@ void InitImgObjectforROS::imgCb(const sensor_msgs::ImageConstPtr &img_msg)
                                                 if (left_interval <= left_min_interval)
                                                 { //need right rotation(ang_vel<0 : right rotation)
                                                         if (abs(left_interval - left_min_interval) <= 10)
-                                                                y_goal_ = -0.21;
+                                                                y_goal_ = -0.23;
                                                         else if (abs(left_interval - left_min_interval) >= 10 && abs(left_interval - left_min_interval) < 15)
                                                                 y_goal_ = -0.25;
                                                         else
@@ -1046,7 +1162,7 @@ void InitImgObjectforROS::imgCb(const sensor_msgs::ImageConstPtr &img_msg)
                                                 else
                                                 { //need left rotation(ang_vel>0 : left rotation)
                                                         if (abs(left_interval - left_max_interval) <= 10)
-                                                                y_goal_ = 0.21;
+                                                                y_goal_ = 0.23;
                                                         else if (abs(left_interval - left_max_interval) >= 10 && abs(left_interval - left_max_interval) < 15)
                                                                 y_goal_ = 0.25;
                                                         else
@@ -1058,7 +1174,6 @@ void InitImgObjectforROS::imgCb(const sensor_msgs::ImageConstPtr &img_msg)
                                                 y_goal_ = prev_y_goal_;
                                         }
                                         
-                                        //if(0)
                                         if (((abs(left_roi_slope) != 10 && abs(right_roi_slope) == 10)) || doubling_flag)
                                         {
                                                 if (left_roi_slope != 11)
@@ -1071,30 +1186,30 @@ void InitImgObjectforROS::imgCb(const sensor_msgs::ImageConstPtr &img_msg)
                                                                 }
                                                                 else if (abs(left_roi_slope) < 0.75 && abs(left_roi_slope) >= 0.6)
                                                                 {
-                                                                        y_goal_ = -0.19;
+                                                                        y_goal_ = -0.22;
                                                                 }
                                                                 else if (abs(left_roi_slope) < 0.6 && abs(left_roi_slope) >= 0.5)
                                                                 {
-                                                                        y_goal_ = -0.23;
+                                                                        y_goal_ = -0.25;
                                                                 }
                                                                 else if (abs(left_roi_slope) < 0.5 && abs(left_roi_slope) >= 0.4)
                                                                 {
-                                                                        y_goal_ = -0.25;
+                                                                        y_goal_ = -0.27;
                                                                 }
                                                                 else if (abs(left_roi_slope) < 0.4 && abs(left_roi_slope) >= 0.3)
                                                                 {
-                                                                        y_goal_ = -0.28;
+                                                                        y_goal_ = -0.29;
                                                                 }
                                                                 else
                                                                 {
-                                                                        y_goal_ = -0.31;
+                                                                        y_goal_ = -0.32;
                                                                 }
                                                         }
                                                 }
                                                 else
                                                 {
                                                         ///***right line presents doubling to right but left line has no info***///
-                                                        y_goal_ = 0.23;
+                                                        y_goal_ = 0.26;
                                                 }
                                         }
                                         else if (abs(left_roi_slope) == 11 && abs(right_roi_slope) == 11)
@@ -1105,8 +1220,11 @@ void InitImgObjectforROS::imgCb(const sensor_msgs::ImageConstPtr &img_msg)
                                 else if (left_interval == -1 && right_interval != -1)
                                 {
                                         bool doubling_flag = false;
+                                        x_goal_ = 0.03;
+                                        if(!debug){
                                         std::cout << "case 3 : 'only right interval is not -1'\n pre left roi slope : " << pre_left_roi_slope << ", left slope : " << left_roi_slope
                                                   << ",\n pre right roi slope : " << pre_right_roi_slope << ", right slope : " << right_roi_slope << std::endl;
+                                        }
                                         if (right_roi_slope < 0.7)
                                         {
                                                 doubling_flag = true;
@@ -1131,7 +1249,7 @@ void InitImgObjectforROS::imgCb(const sensor_msgs::ImageConstPtr &img_msg)
                                                 if (right_interval <= right_min_interval)
                                                 { //need left rotation(ang_vel>0 : left rotation)
                                                         if (abs(right_interval - right_min_interval) <= 10)
-                                                                y_goal_ = 0.21;
+                                                                y_goal_ = 0.23;
                                                         else if (abs(right_interval - right_min_interval) > 10 && abs(right_interval - right_min_interval) <= 15)
                                                                 y_goal_ = 0.25;
                                                         else
@@ -1140,7 +1258,7 @@ void InitImgObjectforROS::imgCb(const sensor_msgs::ImageConstPtr &img_msg)
                                                 else
                                                 { //need right rotation(ang_vel<0 : right rotation)
                                                         if (abs(right_interval - right_max_interval) <= 10)
-                                                                y_goal_ = -0.21;
+                                                                y_goal_ = -0.23;
                                                         else if (abs(right_interval - right_max_interval) > 10 && abs(right_interval - right_max_interval) <= 15)
                                                                 y_goal_ = -0.25;
                                                         else
@@ -1165,30 +1283,30 @@ void InitImgObjectforROS::imgCb(const sensor_msgs::ImageConstPtr &img_msg)
                                                                 }
                                                                 else if (right_roi_slope < 0.76 && right_roi_slope >= 0.7)
                                                                 {
-                                                                        y_goal_ = 0.19;
+                                                                        y_goal_ = 0.22;
                                                                 }
                                                                 else if (right_roi_slope < 0.7 && right_roi_slope >= 0.6)
                                                                 {
-                                                                        y_goal_ = 0.23;
+                                                                        y_goal_ = 0.25;
                                                                 }
                                                                 else if (right_roi_slope < 0.6 && right_roi_slope >= 0.5)
                                                                 {
-                                                                        y_goal_ = 0.25;
+                                                                        y_goal_ = 0.27;
                                                                 }
                                                                 else if (right_roi_slope < 0.5 && right_roi_slope >= 0.4)
                                                                 {
-                                                                        y_goal_ = 0.28;
+                                                                        y_goal_ = 0.29;
                                                                 }
                                                                 else
                                                                 {
-                                                                        y_goal_ = 0.31;
+                                                                        y_goal_ = 0.32;
                                                                 }
                                                         }
                                                 }
                                                 else
                                                 {
                                                         ///***left line presents doubling to left but right line has no info***///
-                                                        y_goal_ = -0.23;
+                                                        y_goal_ = -0.26;
                                                 }
                                         }
                                         else if (abs(left_roi_slope) == 11 && abs(right_roi_slope) == 11)
@@ -1198,10 +1316,12 @@ void InitImgObjectforROS::imgCb(const sensor_msgs::ImageConstPtr &img_msg)
                                 }
                                 else
                                 {
+                                        if(!debug){
                                         std::cout << "case 4: 'all intervals are -1'\n pre left roi slope : " << pre_left_roi_slope << ", left slope : " << left_roi_slope
                                                   << ",\n pre right roi slope : " << pre_right_roi_slope << ", right slope : " << right_roi_slope << std::endl;
-
-                                        y_goal_ = prev_y_goal_;
+                                        }
+                                        y_goal_ = 0;
+                                        x_goal_ = -0.03;
                                 }
 
                                 // if (blocking_bar_checked)
@@ -1216,13 +1336,19 @@ void InitImgObjectforROS::imgCb(const sensor_msgs::ImageConstPtr &img_msg)
                                 {
                                         // x_goal_ = 0.06;
                                 }
-                                std::cout << "x_goal_            : " << x_goal_ << std::endl;
-                                std::cout << "prev_y_goal        : " << prev_y_goal_ << ",  y_goal_         : " << y_goal_ << std::endl;
-                                std::cout << "pre_right_size     : " << pre_right_size << ",     right_lane_size : " << right_lane_fitting.size() << std::endl;
-                                std::cout << "pre_left_size      : " << pre_left_size << ",     left_lane_size  : " << left_lane_fitting.size() << std::endl;
-                                std::cout << "pre_right_interval : " << pre_right_interval << ",    right_interval  : " << right_interval << std::endl;
-                                std::cout << "pre_left_interval  : " << pre_left_interval << ",      left_interval  : " << left_interval << std::endl;
-                                std::cout << "************************************************************************" << std::endl;
+                                if(!debug){
+                                        std::cout << "x_goal_            : " << x_goal_ << std::endl;
+                                        std::cout << "prev_y_goal        : " << prev_y_goal_ << ",  y_goal_         : " << y_goal_ << std::endl;
+                                        std::cout << "pre_right_size     : " << pre_right_size << ",     right_lane_size : " << right_lane_fitting.size() << std::endl;
+                                        std::cout << "pre_left_size      : " << pre_left_size << ",     left_lane_size  : " << left_lane_fitting.size() << std::endl;
+                                        std::cout << "pre_right_interval : " << pre_right_interval << ",    right_interval  : " << right_interval << std::endl;
+                                        std::cout << "pre_left_interval  : " << pre_left_interval << ",      left_interval  : " << left_interval << std::endl;
+                                        std::cout << "************************************************************************" << std::endl;
+                                }
+                                
+                                //std::cout << "prev_y_goal        : " << prev_y_goal_ << ",  y_goal_         : " << y_goal_ << std::endl;
+                                //printf("***************left_interval : %d, right_interval : %d\n",left_interval,right_interval);
+                                //std::cout << "************************************************************************" << std::endl;
                                 goal_array.data.clear();
                                 goal_array.data.resize(0);
                                 goal_array.data.push_back(x_goal_); //linear_vel아님 정확힌 직진방향 x목표점임. 속도변수따로만들기
@@ -1261,7 +1387,10 @@ void InitImgObjectforROS::imgCb(const sensor_msgs::ImageConstPtr &img_msg)
                                         //go_cnt++;
                                         signal_lamp_stage = 0;
                                         if(signalGreenDetection(green_hsv)){
-                                                std::cout<<"green detection!~~~~~~~~~~~~~~~~~~~~~~~~\n";
+                                                if(debug){
+                                                        std::cout<<"green detection!~~~~~~~~~~~~~~~~~~~~~~~~\n";
+                                                }
+                                                
                                                 goal_array.data.clear();
                                                 goal_array.data.resize(0);
                                                 x_goal_ = 0;
@@ -1401,7 +1530,7 @@ void InitImgObjectforROS::imgCb(const sensor_msgs::ImageConstPtr &img_msg)
                                                 go_cnt = 0;
                                                 goal_array.data.clear();
                                                 goal_array.data.resize(0);
-                                                x_goal_ = 1.0;
+                                                x_goal_ = 0;
                                                 y_goal_ = 0;
                                                 goal_array.data.push_back(x_goal_); 
                                                 goal_array.data.push_back(y_goal_);
@@ -1411,7 +1540,7 @@ void InitImgObjectforROS::imgCb(const sensor_msgs::ImageConstPtr &img_msg)
                                         case 1: 
                                                 goal_array.data.clear();
                                                 goal_array.data.resize(0);
-                                                x_goal_ = 1.0;
+                                                x_goal_ = 0;
                                                 y_goal_ = 0;
                                                 goal_array.data.push_back(x_goal_); 
                                                 goal_array.data.push_back(y_goal_);
@@ -1449,7 +1578,111 @@ void InitImgObjectforROS::imgCb(const sensor_msgs::ImageConstPtr &img_msg)
                                         case 4: 
                                                 goal_array.data.clear();
                                                 goal_array.data.resize(0);
-                                                x_goal_ = 1.0;
+                                                x_goal_ = 0;
+                                                y_goal_ = 0;
+                                                goal_array.data.push_back(x_goal_); 
+                                                goal_array.data.push_back(y_goal_);
+                                                go_cnt++;
+                                                if(go_cnt>5){
+                                                        two_direction_stage = 5;
+                                                        go_cnt = 0;
+                                                }
+                                                break;
+                                        case 5: 
+                                                goal_array.data.clear();
+                                                goal_array.data.resize(0);
+                                                x_goal_ = 0;
+                                                y_goal_ = -0.45;
+                                                goal_array.data.push_back(x_goal_); 
+                                                goal_array.data.push_back(y_goal_);
+                                                go_cnt++;
+                                                if(go_cnt>2){
+                                                        two_direction_stage = 6;
+                                                        go_cnt = 0;
+                                                }
+                                                break;
+                                        case 6: 
+                                                goal_array.data.clear();
+                                                goal_array.data.resize(0);
+                                                x_goal_ = 0;
+                                                y_goal_ = 0;
+                                                goal_array.data.push_back(x_goal_); 
+                                                goal_array.data.push_back(y_goal_);
+                                                go_cnt = 0;
+                                                right_direction_mode = false;
+                                                two_direction_checked = true;
+                                                normal_mode = true;
+                                                break;
+                                        
+                                }
+                                
+                        }
+                        if (building_mode && !parking_mode && !blocking_bar_mode && !signal_lamp_mode && !tunnel_mode)
+                        {
+                                
+                                switch (building_stage)
+                                {
+                                        case 0:
+                                                go_cnt = 0;
+                                                goal_array.data.clear();
+                                                goal_array.data.resize(0);
+                                                x_goal_ = 0.06;
+                                                y_goal_ = 0;
+                                                goal_array.data.push_back(x_goal_); 
+                                                goal_array.data.push_back(y_goal_);
+                                                go_cnt++;
+                                                if(go_cnt > 5){
+                                                        goal_array.data.clear();
+                                                goal_array.data.resize(0);
+                                                        x_goal_ = 0.0;
+                                                        y_goal_ = 0.0;
+                                                        goal_array.data.push_back(x_goal_); 
+                                                goal_array.data.push_back(y_goal_);
+                                              
+                                                }
+                                                break;
+                                        case 1: 
+                                                goal_array.data.clear();
+                                                goal_array.data.resize(0);
+                                                x_goal_ = 0.06;
+                                                y_goal_ = 0;
+                                                goal_array.data.push_back(x_goal_); 
+                                                goal_array.data.push_back(y_goal_);
+                                                go_cnt++;
+                                                if(go_cnt>5){
+                                                        two_direction_stage = 2;
+                                                        go_cnt = 0;
+                                                }
+                                                break;
+                                        case 2: 
+                                                goal_array.data.clear();
+                                                goal_array.data.resize(0);
+                                                x_goal_ = 0;
+                                                y_goal_ = 0.45;
+                                                goal_array.data.push_back(x_goal_); 
+                                                goal_array.data.push_back(y_goal_);
+                                                go_cnt++;
+                                                if(go_cnt>2){
+                                                        two_direction_stage = 3;
+                                                        go_cnt = 0;
+                                                }
+                                                break;
+                                        case 3: 
+                                                goal_array.data.clear();
+                                                goal_array.data.resize(0);
+                                                x_goal_ = 0;
+                                                y_goal_ = 0;
+                                                goal_array.data.push_back(x_goal_); 
+                                                goal_array.data.push_back(y_goal_);
+                                                go_cnt = 0;
+                                                left_direction_mode = false;
+                                                two_direction_checked = true;
+                                                normal_mode = true;
+                                                break;
+                                        case 4: 
+                                                goal_array.data.clear();
+                                                goal_array.data.resize(0);
+                                                x_goal_ = 0.06;
                                                 y_goal_ = 0;
                                                 goal_array.data.push_back(x_goal_); 
                                                 goal_array.data.push_back(y_goal_);
@@ -1493,13 +1726,16 @@ void InitImgObjectforROS::imgCb(const sensor_msgs::ImageConstPtr &img_msg)
                                 cv::Mat parked = origin_white_hsv.clone();
 
                                 cv::Mat park_zero = cv::Mat::zeros(origin_white_hsv.size(), CV_8UC1);
-                                std::cout << "parking stage : " << parking_stage << std::endl;
+                                if(debug){
+                                        std::cout << "parking stage : " << parking_stage << std::endl;
+                                }
+                                
                                 switch (parking_stage)
                                 {
                                 case 0:
                                         goal_array.data.clear();
                                         goal_array.data.resize(0);
-                                        x_goal_ = 1.0;
+                                        x_goal_ = 0.06;
                                         y_goal_ = 0;
                                         go_cnt++;
                                         goal_array.data.push_back(x_goal_); //linear_vel아님 정확힌 직진방향 x목표점임. 속도변수따로만들기
@@ -1527,9 +1763,12 @@ void InitImgObjectforROS::imgCb(const sensor_msgs::ImageConstPtr &img_msg)
                                 case 2: //////////////////////////// no yellow detection
                                 {
                                         bool doubling_flag = false;
-                                        std::cout << "enter parking : 'only left interval is not -1'\n pre left roi slope : " << pre_left_roi_slope << ", left slope : " << left_roi_slope
+                                        if(debug){
+                                                std::cout << "enter parking : 'only left interval is not -1'\n pre left roi slope : " << pre_left_roi_slope << ", left slope : " << left_roi_slope
                                                   << ",\n pre right roi slope : " << pre_right_roi_slope << ", right slope : " << right_roi_slope << std::endl;
 
+                                        }
+                                        
                                         if ((left_interval > left_min_interval && left_interval < left_max_interval))
                                         {
                                                 if (abs(left_roi_slope) < 0.7)
@@ -1575,7 +1814,7 @@ void InitImgObjectforROS::imgCb(const sensor_msgs::ImageConstPtr &img_msg)
                                         }
                                         else
                                         {
-                                                x_goal_ = 1.0;
+                                                x_goal_ = 0.06;
                                         }
                                         goal_array.data.push_back(x_goal_); //linear_vel아님 정확힌 직진방향 x목표점임. 속도변수따로만들기
                                         goal_array.data.push_back(y_goal_);
@@ -1584,7 +1823,7 @@ void InitImgObjectforROS::imgCb(const sensor_msgs::ImageConstPtr &img_msg)
                                 case 3:
                                         goal_array.data.clear();
                                         goal_array.data.resize(0);
-                                        x_goal_ = 1.0;
+                                        x_goal_ = 0.06;
                                         y_goal_ = 0;
                                         goal_array.data.push_back(x_goal_); //linear_vel아님 정확힌 직진방향 x목표점임. 속도변수따로만들기
                                         goal_array.data.push_back(y_goal_);
@@ -1657,7 +1896,7 @@ void InitImgObjectforROS::imgCb(const sensor_msgs::ImageConstPtr &img_msg)
                                 {
                                         goal_array.data.clear();
                                         goal_array.data.resize(0);
-                                        x_goal_ = 1.0; //enter parking lot
+                                        x_goal_ = 0.06; //enter parking lot
                                         y_goal_ = 0;
                                         goal_array.data.push_back(x_goal_); //linear_vel아님 정확힌 직진방향 x목표점임. 속도변수따로만들기
                                         goal_array.data.push_back(y_goal_);
@@ -1675,7 +1914,7 @@ void InitImgObjectforROS::imgCb(const sensor_msgs::ImageConstPtr &img_msg)
                                         {
                                                 goal_array.data.clear();
                                                 goal_array.data.resize(0);
-                                                x_goal_ = -1.0; //escape parking lot
+                                                x_goal_ = -0.6; //escape parking lot
                                                 y_goal_ = 0;
                                                 goal_array.data.push_back(x_goal_); //linear_vel아님 정확힌 직진방향 x목표점임. 속도변수따로만들기
                                                 goal_array.data.push_back(y_goal_);
@@ -1715,7 +1954,7 @@ void InitImgObjectforROS::imgCb(const sensor_msgs::ImageConstPtr &img_msg)
                                 {
                                         goal_array.data.clear();
                                         goal_array.data.resize(0);
-                                        x_goal_ = -1.0;
+                                        x_goal_ = -0.06;
                                         y_goal_ = 0;
                                         goal_array.data.push_back(x_goal_); //linear_vel아님 정확힌 직진방향 x목표점임. 속도변수따로만들기
                                         goal_array.data.push_back(y_goal_);
@@ -1733,7 +1972,7 @@ void InitImgObjectforROS::imgCb(const sensor_msgs::ImageConstPtr &img_msg)
                                         {
                                                 goal_array.data.clear();
                                                 goal_array.data.resize(0);
-                                                x_goal_ = 1.0;
+                                                x_goal_ = 0.06;
                                                 y_goal_ = 0;
                                                 goal_array.data.push_back(x_goal_); //linear_vel아님 정확힌 직진방향 x목표점임. 속도변수따로만들기
                                                 goal_array.data.push_back(y_goal_);
@@ -1775,9 +2014,12 @@ void InitImgObjectforROS::imgCb(const sensor_msgs::ImageConstPtr &img_msg)
                                         if (go_cnt == 0)
                                         {
                                                 bool doubling_flag = false;
-                                                std::cout << "escape parking right : 'only left interval is not -1'\n pre left roi slope : " << pre_left_roi_slope << ", left slope : " << left_roi_slope
+                                                if(debug){
+                                                        std::cout << "escape parking right : 'only left interval is not -1'\n pre left roi slope : " << pre_left_roi_slope << ", left slope : " << left_roi_slope
                                                           << ",\n pre right roi slope : " << pre_right_roi_slope << ", right slope : " << right_roi_slope << std::endl;
 
+                                                }
+                                                
                                                 if ((left_interval > left_min_interval && left_interval < left_max_interval))
                                                 {
                                                         if (abs(left_roi_slope) < 0.7)
@@ -1859,12 +2101,12 @@ void InitImgObjectforROS::imgCb(const sensor_msgs::ImageConstPtr &img_msg)
                                                 }
                                                 else
                                                 {
-                                                        x_goal_ = 1.0;
+                                                        x_goal_ = 0.06;
                                                 }
                                         }
                                         else if (go_cnt > 5 && go_cnt <= 7)
                                         {
-                                                x_goal_ = 1.0;
+                                                x_goal_ = 0.06;
                                                 y_goal_ = 0;
                                                 go_cnt++;
                                         }
@@ -1882,7 +2124,7 @@ void InitImgObjectforROS::imgCb(const sensor_msgs::ImageConstPtr &img_msg)
                                         }
                                         else if (go_cnt > 10 && go_cnt <= 12)
                                         {
-                                                x_goal_ = 1.0;
+                                                x_goal_ = 0.06;
                                                 y_goal_ = 0;
                                                 go_cnt++;
                                         }
@@ -2043,7 +2285,7 @@ void InitImgObjectforROS::imgCb(const sensor_msgs::ImageConstPtr &img_msg)
         if (auto_shot)
         {
                 std::cout << "Save screen shot" << std::endl;
-                cv::imwrite("/home/seuleee/Desktop/autorace_img_src/1110/parking_sign" + to_string(imgNum) + ".jpg", output_origin_for_copy);
+                cv::imwrite("/home/seuleee/Desktop/autorace_img_src/1116/test" + to_string(imgNum) + ".jpg", output_origin_for_copy);
                 imgNum++;
         }
         int ckey = cv::waitKey(10);
@@ -2077,7 +2319,7 @@ void InitImgObjectforROS::initParam()
 
         nh.param<int>("/" + groupName + "/lane_detection/reset_msg", reset_msg, 0);
         //default yellow when no launch file for lane color
-        nh.param<int>("/" + groupName + "/lane_detection/y_hmin", y_hmin, 15);
+        nh.param<int>("/" + groupName + "/lane_detection/y_hmin", y_hmin, 10);
         nh.param<int>("/" + groupName + "/lane_detection/y_hmax", y_hmax, 21);
         nh.param<int>("/" + groupName + "/lane_detection/y_smin", y_smin, 52);
         nh.param<int>("/" + groupName + "/lane_detection/y_smax", y_smax, 151);
@@ -2472,7 +2714,9 @@ void InitImgObjectforROS::setColorPreocessing(lane_detect_algo::CalLane callane,
         { //Use trackbar. Use real-time trackbar's hsv value
 
                 //for detect lane color
-                callane.detectYHSVcolor(bev, dst_y, y_hmin, y_hmax, y_smin, y_smax, y_vmin, y_vmax);
+                //callane.detectYHSVcolor(bev, dst_y, y_hmin, y_hmax, y_smin, y_smax, y_vmin, y_vmax);
+                callane.detectWhiteRange(bev, dst_y, y_hmin, y_hmax, y_smin, y_smax, y_vmin, y_vmax,0,0);
+
                 callane.detectWhiteRange(bev, dst_w, w_hmin, w_hmax, w_smin, w_smax, w_vmin, w_vmax, 0, 0);
                 callane.detectWhiteRange(parking_white, parking_white, w_hmin, w_hmax, w_smin, w_smax, w_vmin, w_vmax, 0, 0);
                 //for detect blocking bar color
@@ -2497,14 +2741,14 @@ void InitImgObjectforROS::setColorPreocessing(lane_detect_algo::CalLane callane,
         }
         else
         { //Don't use trackbar. Use defalut value.
-                callane.detectYHSVcolor(bev, dst_y, 7, 21, 52, 151, 0, 180);
-                callane.detectWhiteRange(bev, dst_w, 0, 180, 0, 29, 179, 255, 0, 0);
+                callane.detectYHSVcolor(bev, dst_y, 19, 56, 43, 255, 0, 255);
+                callane.detectWhiteRange(bev, dst_w, 38, 179, 0, 88, 246, 255, 0, 0);
 
-                callane.detectWhiteRange(bev, dst_r, 160, 179, 0, 29, 179, 255, 0, 0);
+                callane.detectWhiteRange(bev, dst_r, 113, 179, 121, 255, 117, 255, 0, 0);
 
-                callane.detectWhiteRange(bev, dst_r2, 160, 179, 0, 29, 179, 255, 0, 0);
-                callane.detectWhiteRange(bev, dst_g, 38, 75, 0, 29, 179, 255, 0, 0);
-                callane.detectWhiteRange(bev, dst_y2, 7, 21, 52, 151, 0, 180, 0, 0);
+                callane.detectWhiteRange(bev, dst_r2, 110, 179, 89, 255, 86, 255, 0, 0);
+                callane.detectWhiteRange(bev, dst_g, 38, 87, 77, 255, 22, 255, 0, 0);
+                callane.detectWhiteRange(bev, dst_y2, 5, 34, 78, 168, 62, 248, 0, 0);
 
                 callane.detectWhiteRange(bev, dst_b, 53, 114, 152, 255, 64, 255, 0, 0);
         }
@@ -3209,8 +3453,11 @@ bool InitImgObjectforROS::signalRedDetection(cv::Mat src_red)
                         }
                 }
         }
-        std::cout << "***** Red signal detection *****" << std::endl;
-        std::cout << "red signal cnt : " << red_cnt << std::endl;
+        if(debug){
+                std::cout << "***** Red signal detection *****" << std::endl;
+                std::cout << "red signal cnt : " << red_cnt << std::endl;
+        }
+        
 
         if (red_cnt > 20 && red_cnt < 60)
         {
@@ -3247,8 +3494,11 @@ bool InitImgObjectforROS::signalGreenDetection(cv::Mat src_green)
                         }
                 }
         }
-        std::cout << "***** Green signal detection *****" << std::endl;
-        std::cout << "green signal cnt : " << green_cnt << std::endl;
+        if(debug){
+                std::cout << "***** Green signal detection *****" << std::endl;
+                std::cout << "green signal cnt : " << green_cnt << std::endl;
+        }
+        
         if (green_cnt > 25)
         {
                 return true;
@@ -3284,9 +3534,15 @@ bool InitImgObjectforROS::signalYellowDetection(cv::Mat src_yellow)
                         }
                 }
         }
-        cv::imshow("yellow roi", yellow_sign_roi);
-        std::cout << "***** Yellow signal detection *****" << std::endl;
-        std::cout << "yellow signal cnt : " << yellow_cnt << std::endl;
+        if(for_gui){
+                cv::imshow("yellow roi", yellow_sign_roi);
+        }
+        
+        if(debug){
+                std::cout << "***** Yellow signal detection *****" << std::endl;
+                std::cout << "yellow signal cnt : " << yellow_cnt << std::endl;
+        }
+        
         if (yellow_cnt > 30 && yellow_cnt < 70)
         {
                 return true;
@@ -3303,11 +3559,23 @@ int InitImgObjectforROS::checkDirectionWithFlann(cv::Mat &src, int min_hessian)
 
         ///**https://docs.opencv.org/3.4/d5/d6f/tutorial_feature_flann_matcher.html**//
         cv::Mat left_turn_src = cv::imread("/home/seuleee/Pictures/left_turn_t1.jpg", cv::IMREAD_GRAYSCALE);
+        cv::Mat blur_left_turn_src;
+        cv::GaussianBlur(left_turn_src, blur_left_turn_src, cv::Size(0,0), 1 );
+        cv::addWeighted(left_turn_src, 2.5, blur_left_turn_src, -1.5, 1, left_turn_src);
+        //cv::addWeighted(left_turn_src, 2.5, blur_left_turn_src, -1.5, 1, left_turn_src);
+        
         cv::Mat right_turn_src = cv::imread("/home/seuleee/Pictures/right_turn_t2.jpg", cv::IMREAD_GRAYSCALE);
+        cv::Mat blur_right_turn_src;
+        cv::GaussianBlur(right_turn_src, blur_right_turn_src, cv::Size(0,0), 1 );
+        cv::addWeighted(right_turn_src, 2.5, blur_right_turn_src, -1.5, 1, right_turn_src);
+        //cv::addWeighted(right_turn_src, 2.5, blur_right_turn_src, -1.5, 1, right_turn_src);
+        
+
         cv::Mat input_src = src.clone();
         cv::Mat blur_input_src;
         cv::GaussianBlur(input_src, blur_input_src, cv::Size(0,0), 1 );
         cv::addWeighted(input_src, 2.5, blur_input_src, -1.5, 1, input_src);//for sharpning
+        //cv::addWeighted(input_src, 2.5, blur_input_src, -1.5, 1, input_src);
         
         cv::Mat descriptors_left_turn, descriptors_right_turn, descriptors_input;
 
@@ -3333,12 +3601,15 @@ int InitImgObjectforROS::checkDirectionWithFlann(cv::Mat &src, int min_hessian)
         bool right_possible = false;
         if (keypoints_input.size() >= 2 && keypoints_right_turn.size() >= 2)
         {
+                
                 right_possible = true;
                 matcher2->knnMatch(descriptors_right_turn, descriptors_input, knn_matches_right, 2);
         }
         if(!left_possible && !right_possible){
+                
                 return_val = false;
                 return return_val;
+
         }
 
         const float ratio_thresh = 0.7f;
@@ -3352,6 +3623,7 @@ int InitImgObjectforROS::checkDirectionWithFlann(cv::Mat &src, int min_hessian)
                                         good_matches_left.push_back(knn_matches_left[i][0]);
                                 }
                         }
+                         std::cout<<" good left : "<<good_matches_left.size()<<std::endl;
                 }
                 if(right_possible){
                         for (size_t i = 0; i < knn_matches_right.size(); i++)
@@ -3361,13 +3633,15 @@ int InitImgObjectforROS::checkDirectionWithFlann(cv::Mat &src, int min_hessian)
                                         good_matches_right.push_back(knn_matches_right[i][0]);
                                 }
                         }
+                        std::cout<<" good right : "<<good_matches_right.size()<<std::endl;
                 }
                 
                 cv::Mat img_matches;
                 if(good_matches_left.size() > good_matches_right.size()){
-                        if(left_possible && good_matches_left.size() >= 5){
+                        if(left_possible && good_matches_left.size() >= 2){
                                 cv::drawMatches(left_turn_src, keypoints_left_turn, input_src, keypoints_input, good_matches_left, img_matches,
                                                 cv::Scalar::all(-1), cv::Scalar::all(-1), std::vector<char>(), cv::DrawMatchesFlags::NOT_DRAW_SINGLE_POINTS);
+                                
                                 return_val = -1;
                                 //printf("*******************************************************left turn !!!!\n");   
                                 
@@ -3380,7 +3654,7 @@ int InitImgObjectforROS::checkDirectionWithFlann(cv::Mat &src, int min_hessian)
                         }
                 }
                 else if(good_matches_left.size() < good_matches_right.size()){
-                        if(right_possible && good_matches_right.size() >= 5){
+                        if(right_possible && good_matches_right.size() >= 2){
                                 cv::drawMatches(right_turn_src, keypoints_right_turn, input_src, keypoints_input, good_matches_right, img_matches,
                                                 cv::Scalar::all(-1), cv::Scalar::all(-1), std::vector<char>(), cv::DrawMatchesFlags::NOT_DRAW_SINGLE_POINTS);
                                 return_val = 1;
@@ -3395,6 +3669,7 @@ int InitImgObjectforROS::checkDirectionWithFlann(cv::Mat &src, int min_hessian)
                         
                 }
                 else{
+                        
                         printf("Both good matches size that left turn and right turn is same...\n");
                 }
                 
@@ -3483,10 +3758,17 @@ bool InitImgObjectforROS::checkParkingWithFlann(cv::Mat &src, int min_hessian){
 
         ///**https://docs.opencv.org/3.4/d5/d6f/tutorial_feature_flann_matcher.html**//
         cv::Mat parking_src = cv::imread("/home/seuleee/Pictures/parking.jpg", cv::IMREAD_GRAYSCALE);
+        cv::Mat blur_parking_src;
+        cv::GaussianBlur(parking_src, blur_parking_src, cv::Size(0,0), 1 );
+        cv::addWeighted(parking_src, 2.5, blur_parking_src, -1.5, 1, parking_src);//for sharpning
+        //cv::addWeighted(parking_src, 2.5, blur_parking_src, -1.5, 1, parking_src);
+
         cv::Mat input_src = src.clone();
         cv::Mat blur_input_src;
         cv::GaussianBlur(input_src, blur_input_src, cv::Size(0,0), 1 );
         cv::addWeighted(input_src, 2.5, blur_input_src, -1.5, 1, input_src);//for sharpning
+        //cv::addWeighted(input_src, 2.5, blur_input_src, -1.5, 1, input_src);
+        //cv::imshow("sdsd",input_src);
         cv::cvtColor(input_src, input_src, CV_BGR2GRAY);
         cv::Mat descriptors_parking, descriptors_input;
         
@@ -3540,9 +3822,9 @@ bool InitImgObjectforROS::checkParkingWithFlann(cv::Mat &src, int min_hessian){
                                                 cv::Scalar::all(-1), cv::Scalar::all(-1), std::vector<char>(), cv::DrawMatchesFlags::NOT_DRAW_SINGLE_POINTS);
                         
                         return_val = true;
-                        printf("*******************************************************parking area !!!!\n");   
-                        printf("good match parking size : %d\n",good_matches.size());
-                        cv::imshow("surf keypoints", img_matches);
+                        //printf("*******************************************************parking area !!!!\n");   
+                        //printf("good match parking size : %d\n",good_matches.size());
+                        //cv::imshow("surf keypoints", img_matches);
                 }
                 else{
                         return_val = false;
@@ -3584,7 +3866,7 @@ bool InitImgObjectforROS::checkTunnelWithFlann(cv::Mat &src, int min_hessian){
         cv::addWeighted(input_src, 2.5, blur_input_src, -1.5, 1, input_src);//for sharpning
       
 
-        cv::imshow("sharp src",input_src);
+        //cv::imshow("sharp src",input_src);
         cv::Mat descriptors_tunnel, descriptors_input;
 
         cv::Ptr<cv::xfeatures2d::SURF> detector = cv::xfeatures2d::SURF::create(min_hessian);
@@ -3642,8 +3924,117 @@ bool InitImgObjectforROS::checkTunnelWithFlann(cv::Mat &src, int min_hessian){
                         cv::drawMatches(tunnel_src, keypoints_tunnel, input_src, keypoints_input, good_matches, img_matches,
                                         cv::Scalar::all(-1), cv::Scalar::all(-1), std::vector<char>(), cv::DrawMatchesFlags::NOT_DRAW_SINGLE_POINTS);
                         return_val = true;
-                        printf("********************************************************tunnel enter !!!!\n");
-                        printf("good match tunnel size : %d\n", good_matches.size());
+                        //printf("********************************************************tunnel enter !!!!\n");
+                        //printf("good match tunnel size : %d\n", good_matches.size());
+                        //cv::imshow("surf keypoints", img_matches);
+                }
+                else
+                {
+                        return_val = false;
+                }
+        }
+        else
+        {
+                int tunnel_score = 0;
+                for (size_t i = 0; i < knn_matches.size(); i++)
+                {
+                        if (knn_matches[i][0].distance < ratio_thresh * knn_matches[i][1].distance)
+                        {
+                                tunnel_score++;
+                        }
+                }
+
+                if (tunnel_score > 3)
+                {
+                        return_val = true;
+                }
+                else
+                {
+                        return_val = false;
+                }
+        }
+
+        return return_val;
+}
+
+bool InitImgObjectforROS::checkBuildingWithFlann(cv::Mat &src, int min_hessian){
+        bool return_val = false;
+
+        ///**https://docs.opencv.org/3.4/d5/d6f/tutorial_feature_flann_matcher.html**//
+        cv::Mat tunnel_src = cv::imread("/home/seuleee/Pictures/building.jpg", cv::IMREAD_GRAYSCALE);
+        
+        cv::Mat blur_tunnel_src;
+        cv::GaussianBlur(tunnel_src, blur_tunnel_src, cv::Size(0,0), 1 );
+        cv::addWeighted(tunnel_src, 2.5, blur_tunnel_src, -1.5, 1, tunnel_src);
+
+        
+        cv::Mat input_src = src.clone();
+        input_src = input_src + cv::Scalar(35,35,35);
+        cv::Mat blur_input_src;
+        cv::GaussianBlur(input_src, blur_input_src, cv::Size(0,0), 1 );
+        cv::addWeighted(input_src, 2.5, blur_input_src, -1.5, 1, input_src);//for sharpning
+      
+
+        //cv::imshow("sharp src",input_src);
+        cv::Mat descriptors_tunnel, descriptors_input;
+
+        cv::Ptr<cv::xfeatures2d::SURF> detector = cv::xfeatures2d::SURF::create(min_hessian);
+        std::vector<cv::KeyPoint> keypoints_tunnel, keypoints_input;
+        
+        detector->detectAndCompute(tunnel_src, cv::noArray(), keypoints_tunnel, descriptors_tunnel);
+        detector->detectAndCompute(input_src, cv::noArray(), keypoints_input, descriptors_input);               
+        
+     
+        cv::Ptr<cv::DescriptorMatcher> matcher = cv::DescriptorMatcher::create(cv::DescriptorMatcher::FLANNBASED);
+        std::vector<std::vector<cv::DMatch>> knn_matches;
+
+        if (keypoints_input.size() >= 2 && keypoints_tunnel.size() >= 2)
+        {
+                // if (descriptors_input.size > descriptors_tunnel.size)
+                // {
+                //         matcher->knnMatch(descriptors_tunnel, descriptors_input, knn_matches, 2);
+                // }
+                // else
+                // { //descriptors_input.size <= descriptors_tunnel.size
+                //         matcher->knnMatch(descriptors_input, descriptors_tunnel, knn_matches, 2);
+                // }
+                matcher->knnMatch(descriptors_tunnel, descriptors_input, knn_matches, 2);
+        }
+        else{
+                return_val = false;
+                return return_val;
+        }
+        const float ratio_thresh = 0.7f;
+        if (for_gui)
+        {
+                std::vector<cv::DMatch> good_matches;
+                for (size_t i = 0; i < knn_matches.size(); i++)
+                {
+                        if (knn_matches[i][0].distance < ratio_thresh * knn_matches[i][1].distance)
+                        {
+                                good_matches.push_back(knn_matches[i][0]);
+                        }
+                }
+
+                cv::Mat img_matches;
+                if (good_matches.size() > 3)
+                {
+
+                        // if(input_src.size > tunnel_src.size){
+                        //         cv::drawMatches(tunnel_src, keypoints_tunnel, input_src, keypoints_input, good_matches, img_matches,
+                        //                 cv::Scalar::all(-1), cv::Scalar::all(-1), std::vector<char>(), cv::DrawMatchesFlags::NOT_DRAW_SINGLE_POINTS);
+
+                        // }
+                        // else{//input_src.size <= tunnel_src.size
+                        //         cv::drawMatches(input_src, keypoints_input, tunnel_src, keypoints_tunnel, good_matches, img_matches,
+                        //                 cv::Scalar::all(-1), cv::Scalar::all(-1), std::vector<char>(), cv::DrawMatchesFlags::NOT_DRAW_SINGLE_POINTS);
+
+                        // }
+                        cv::drawMatches(tunnel_src, keypoints_tunnel, input_src, keypoints_input, good_matches, img_matches,
+                                        cv::Scalar::all(-1), cv::Scalar::all(-1), std::vector<char>(), cv::DrawMatchesFlags::NOT_DRAW_SINGLE_POINTS);
+                        return_val = true;
+                        //printf("********************************************************tunnel enter !!!!\n");
+                        printf("good match building size : %d\n", good_matches.size());
                         cv::imshow("surf keypoints", img_matches);
                 }
                 else
@@ -3674,6 +4065,7 @@ bool InitImgObjectforROS::checkTunnelWithFlann(cv::Mat &src, int min_hessian){
 
         return return_val;
 }
+
 bool InitImgObjectforROS::checkBlueArea(cv::Mat &src, cv::Point &left_top_blue, cv::Point &right_bottom_blue){
         std::vector<std::vector<cv::Point>> countours;
         std::vector<cv::Vec4i> hierachy;
@@ -3709,7 +4101,7 @@ bool InitImgObjectforROS::checkBlueArea(cv::Mat &src, cv::Point &left_top_blue, 
                 //             FONT_HERSHEY_SIMPLEX, 0.3, Scalar(5, 25, 255), 2);
                 // cv::imshow("w_lable", draw_lable);
                 
-                if (width >= 20 && height >= 20 && abs(height-width) <10)
+                if (width >= 10 && height >= 10 && abs(height-width) <10 && left>100)
                 {
                                 
                         // left_top_blue.x = left;
@@ -3732,9 +4124,9 @@ bool InitImgObjectforROS::checkBlueArea(cv::Mat &src, cv::Point &left_top_blue, 
                         
 
                         int is_rec1 = 0, is_rec2 = 0;
-                        for(int i = top-5; i<top+25; i++){
-                                int *blue_data = src.ptr<int>(i);
-                                for(int j = left-5; j<left+25; j++){
+                        for(int i = top; i<top+10; i++){
+                                uchar *blue_data = src.ptr<uchar>(i);
+                                for(int j = left; j<left+10; j++){
                                         if(blue_data[j] != (uchar)0){
                                                 is_rec1++;
                                         } 
@@ -3745,7 +4137,10 @@ bool InitImgObjectforROS::checkBlueArea(cv::Mat &src, cv::Point &left_top_blue, 
                                 //         } 
                                 // }
                         }
-                        std::cout<< "rec1 : " <<is_rec1<<std::endl;
+                        if(!debug){
+                                std::cout<< "rec1 : " <<is_rec1<<std::endl;
+                        }
+                        
                        
 
                         return_val = true;
@@ -3804,20 +4199,20 @@ bool InitImgObjectforROS::checkYellowArea(cv::Mat &src_red, cv::Mat &src_yellow,
                 //             FONT_HERSHEY_SIMPLEX, 0.3, Scalar(5, 25, 255), 2);
                 // cv::imshow("w_lable", draw_lable);
                 
-                if (width >= 10 && height >= 10 && abs(height-width) <10 && width <= 40 && height <= 40)
+                if (width >= 5 && height >= 5 && abs(height-width) <10 && width <= 30 && height <= 30)
                 {
                         int y_score = 0;
-                        if(top - 5 > 0){
-                                for(int i = top; i>top-5; i--){
-                                        int *yellow_data = src_yellow.ptr<int>(i);
-                                        for(int j = left; j<left+width; j++){
-                                                if(yellow_data[j] != (char)0){
-                                                        y_score++;
-                                                }
-                                        }
-                                }
+                        // if(top - 5 > 0){
+                        //         for(int i = top; i>top-5; i--){
+                        //                 uchar *yellow_data = src_yellow.ptr<uchar>(i);
+                        //                 for(int j = left; j<left+width; j++){
+                        //                         if(yellow_data[j] != (uchar)0){
+                        //                                 y_score++;
+                        //                         }
+                        //                 }
+                        //         }
                                 
-                        }
+                        // }
                         //if(y_score < 10){
                                 if(left - 10 > 0) {left_top_yellow.x = left-9;}
                                 else {left_top_yellow.x = left;}
@@ -3868,7 +4263,7 @@ int main(int argc, char **argv)
 
         ROS_INFO("strat lane detection");
         InitImgObjectforROS img_obj;
-        ros::Rate loop_rate(45);
+        ros::Rate loop_rate(1000);
         //record flag 만들기, group node launch파일에 복구
         if (auto_record)
         {
@@ -3877,7 +4272,7 @@ int main(int argc, char **argv)
                 else if (groupName == "right")
                         video_right.open("/home/seuleee/Desktop/autorace_video_src/0717/right_record.avi", cv::VideoWriter::fourcc('X', 'V', 'I', 'D'), fps, cv::Size(640 / 2, 480 / 2), isColor);
                 else if (groupName == "main")
-                        video_main.open("/home/seuleee/Desktop/autorace_video_src/1110/tunnel3.avi", cv::VideoWriter::fourcc('X', 'V', 'I', 'D'), fps, cv::Size(640 / 2, 480 / 2), isColor);
+                        video_main.open("/home/seuleee/Desktop/autorace_video_src/1115/building5.avi", cv::VideoWriter::fourcc('X', 'V', 'I', 'D'), fps, cv::Size(640 / 2, 480 / 2), isColor);
         }
 
         while (img_obj.nh.ok())

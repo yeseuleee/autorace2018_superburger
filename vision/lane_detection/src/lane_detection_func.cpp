@@ -1621,10 +1621,10 @@ namespace lane_detect_algo{
                             
                         }
                     }
-                    cv::rectangle(draw_lable, cv::Point(left, top), cv::Point(left + width, top + height), cv::Scalar(0, 0, 255), 1);
-                    cv::putText(draw_lable, std::to_string(area), cv::Point(left + 20, top + 20),
-                                FONT_HERSHEY_SIMPLEX, 0.3, Scalar(5, 25, 255), 2);
-                    cv::imshow("w_lable", draw_lable);
+                    // cv::rectangle(draw_lable, cv::Point(left, top), cv::Point(left + width, top + height), cv::Scalar(0, 0, 255), 1);
+                    // cv::putText(draw_lable, std::to_string(area), cv::Point(left + 20, top + 20),
+                    //             FONT_HERSHEY_SIMPLEX, 0.3, Scalar(5, 25, 255), 2);
+                    // cv::imshow("w_lable", draw_lable);
                 }
                 //box_pt.push_back(cv::Point(dst.cols / 2, dst.rows / 2));
                 //box_pt.push_back(cv::Point(dst.cols - 1 / dst.rows - 1));
