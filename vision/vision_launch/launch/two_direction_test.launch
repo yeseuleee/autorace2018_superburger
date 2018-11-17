@@ -19,11 +19,11 @@
 			<param name="reset_msg" value="0"/>
 			
 			
-			<param name="left_min_interval" value="143"/>
+			<param name="left_min_interval" value="148"/>
 		
 			<param name="left_max_interval" value="157"/>
 			
-			<param name="right_min_interval" value="136"/>
+			<param name="right_min_interval" value="138"/>
 		
 			<param name="right_max_interval" value="153"/>
 	
@@ -33,14 +33,14 @@
 			<!--522-->
 			<!-- <param name="y_hmin" value="0"/> -->
 			<param name="y_hmin" value="18"/>
-			<param name="y_hmax" value="48"/>
+			<param name="y_hmax" value="71"/>
 			<!-- <param name="y_smin" value="39"/> -->
-			<param name="y_smin" value="62"/>
+			<param name="y_smin" value="103"/>
 			<!-- <param name="y_smax" value="153"/> -->
 			<param name="y_smax" value="255"/>
 			<!-- <param name="y_vmin" value="15"/> -->
-			<param name="y_vmin" value="158"/>
-			<param name="y_vmax" value="206"/>
+			<param name="y_vmin" value="123"/>
+			<param name="y_vmax" value="201"/>
 	
 			
 			
@@ -48,9 +48,9 @@
 			<!-- <param name="w_hmin" value="38"/> -->
 			<param name="w_hmax" value="179"/>
 			<param name="w_smin" value="0"/>
-			<param name="w_smax" value="30"/>
+			<param name="w_smax" value="98"/>
 			<!-- <param name="w_smax" value="88"/> -->
-			<param name="w_vmin" value="180"/>
+			<param name="w_vmin" value="176"/>
 			<!-- <param name="w_vmin" value="181"/> -->
 			<param name="w_vmax" value="255"/>
 
